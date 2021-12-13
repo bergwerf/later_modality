@@ -206,7 +206,7 @@ Qed.
 
 End Deductions.
 
-Section Model.
+Section Reference_model.
 
 Inductive Sω :=
   | Finite (n : nat)
@@ -311,83 +311,125 @@ all: destruct (_ <=? _) eqn:E; try done.
 all: try apply Nat.leb_le in E; try apply Nat.leb_gt in E; lia.
 Qed.
 
-End Model.
+End Reference_model.
 
-Section Decider.
+Section Permutation_trees.
+
+Context {X : Type}.
+
+Inductive tree :=
+  | Leaf
+  | Node (x : X) (l r : tree).
+
+Fixpoint flatten t :=
+  match t with
+  | Leaf => []
+  | Node x l r => flatten l ++ x :: flatten r
+  end.
+
+Fixpoint grow t x :=
+  match t with
+  | Leaf => [Node x Leaf Leaf]
+  | Node y l r =>
+    ((λ l, Node y l r) <$> grow l x) ++
+    ((λ r, Node y l r) <$> grow r x)
+  end.
+
+Definition perm_trees xs :=
+  foldl (λ ts x, flat_map (λ t, grow t x) ts) [Leaf] xs.
+
+End Permutation_trees.
+
+Section Permutation_deduction.
+
+Fixpoint perm_atoms xs :=
+  match xs with
+  | [] => []
+  | [_] => []
+  | x :: (y :: _) as xs' => (#x ⟹ #y) :: perm_atoms xs'
+  end.
+
+Lemma d_flatten_perm_trees xs :
+  ⊤ ⊢ ⋁ ((λ perm, ⋁ perm_atoms perm) <$> (flatten <$> perm_trees xs)).
+Proof.
+Admitted.
+
+End Permutation_deduction.
+
+Section Counterexample_search.
 
 Definition cons_prod {X} (hds : list X) (tls : list (list X))
   : list (list X) := flat_map (λ x, cons x <$> tls) hds.
 
-Fixpoint encode_case (d_max : nat) (case : list (nat * nat)) :=
+Fixpoint case_formula (d_max : nat) (case : list (nat * nat)) :=
   match case with
   | [] => ⊤ | [_] => ⊤
   | (i, d) :: ((j, _) :: _) as case' =>
     if d =? d_max
-    then (Nat.iter d f_Later (#i) ⟹ #j) `∧` encode_case d_max case'
-    else (Nat.iter d f_Later (#i) ⟺ #j) `∧` encode_case d_max case'
+    then (Nat.iter d f_Later (#i) ⟹ #j) `∧` case_formula d_max case'
+    else (Nat.iter d f_Later (#i) ⟺ #j) `∧` case_formula d_max case'
   end.
 
-Fixpoint prop_value (case : list (nat * nat)) (acc : nat) (i : nat) : Sω :=
+Fixpoint case_context (case : list (nat * nat)) (acc : nat) (i : nat) : Sω :=
   match case with
   | [] => Finite 0
   | (j, d) :: case' => if i =? j
     then Finite acc
-    else prop_value case' (acc + S d) i
+    else case_context case' (acc + S d) i
   end.
 
 Definition check_case (f : form term) (case : list (nat * nat)) :=
-  match (eval (interp (prop_value case 0) <$> f)) with
+  match (eval (interp (case_context case 0) <$> f)) with
   | Finite _ => true
   | Infinite => false
   end.
 
-Definition all_cases fv md :=
-  let perms := permutations (seq 0 fv) in
+Definition list_cases fv md :=
+  let perms := flatten <$> perm_trees (seq 0 fv) in
   let skips := Nat.iter fv (cons_prod (seq 0 (S md))) [[]] in
   let cases := flat_map (λ perm, zip perm <$> skips) perms in
   cases.
 
-Definition counter_example (f : form term) :=
-  find (check_case f) (all_cases (FV f) (MD f)).
+Definition counterexample (f : form term) :=
+  find (check_case f) (list_cases (FV f) (MD f)).
 
 Example not_strong_later_inj :
-  counter_example ((▷#0 ⟹ ▷#1) ⟹ #0 ⟹ #1) = Some [(1, 0); (0, 0)].
+  counterexample ((▷#0 ⟹ ▷#1) ⟹ #0 ⟹ #1) = Some [(1, 0); (0, 0)].
 Proof. done. Qed.
 
 Example leftover_middle_case :
-  counter_example (#0 ⟹ #1 `∨` ▷▷#1 ⟹ #0) = Some [(1, 0); (0, 0)].
+  counterexample (#0 ⟹ #1 `∨` ▷▷#1 ⟹ #0) = Some [(1, 0); (0, 0)].
 Proof. done. Qed.
-
-End Decider.
 
 Lemma check_case_sound f case :
   check_case f case = true -> ∃ Γ, ¬ realizes Γ ⊤ f.
 Proof.
-intros; exists (prop_value case 0); intros C.
+intros; exists (case_context case 0); intros C.
 unfold check_case, realizes in *; simpl in *.
 destruct (eval _); done.
 Qed.
 
-Lemma counter_example_sound f case :
-  counter_example f = Some case -> ∃ Γ, ¬ realizes Γ ⊤ f.
-Proof.
+Lemma counterexample_sound f case :
+  counterexample f = Some case -> ∃ Γ, ¬ realizes Γ ⊤ f.
+Proof. 
 intros; eapply check_case_sound.
 apply find_some in H; apply H.
 Qed.
 
-Lemma all_cases_fv case fv md :
-  case ∈ all_cases fv md -> foldl max 0 (map fst case) = fv.
+Lemma list_cases_fv case fv md :
+  case ∈ list_cases fv md -> foldl max 0 case.*1 = fv.
 Proof.
-(*
-Although this is easy to prove, I have skipped it because the case unfolding
-may change depending on how I figure out a proof for all_cases_complete.
-*)
+unfold list_cases; intros.
+apply elem_of_list_In, in_flat_map in H as (x & H1 & H2).
+apply elem_of_list_In, elem_of_list_fmap in H1
+as (perm & -> & H1), H2 as (skips & -> & H2).
+rewrite fst_zip.
 Admitted.
 
 Lemma check_case_complete f d_max case :
   MD f <= d_max ->
-  FV f <= foldl max 0 (map fst case) ->
-  check_case f case = false -> encode_case d_max case ⊢ f.
+  FV f <= foldl max 0 case.*1 ->
+  check_case f case = false -> case_formula d_max case ⊢ f.
 Proof.
 (*
 This is quite a bit of work. The case must have a sufficient variable range and
@@ -396,8 +438,8 @@ reduce the formula f.
 *)
 Admitted.
 
-Lemma all_cases_complete fv md :
-  ⊤ ⊢ ⋁ (encode_case md <$> all_cases fv md).
+Lemma list_cases_complete fv md :
+  ⊤ ⊢ ⋁ (case_formula md <$> list_cases fv md).
 Proof.
 (*
 This is challenging, I do not yet know exactly how to approach this proof.
@@ -406,24 +448,26 @@ But how do we translate this into a deduction?
 *)
 Admitted.
 
-Theorem counter_example_complete f :
-  counter_example f = None -> ⊤ ⊢ f.
+Theorem counterexample_complete f :
+  counterexample f = None -> ⊤ ⊢ f.
 Proof.
-unfold counter_example; intros. ecut.
-apply all_cases_complete with (fv:=FV f)(md:=MD f).
+unfold counterexample; intros. ecut.
+apply list_cases_complete with (fv:=FV f)(md:=MD f).
 eapply d_big_disj_elim; intros p Hp.
 apply elem_of_list_fmap in Hp as (case & -> & Hcase).
 apply check_case_complete. done.
-erewrite all_cases_fv; [done|apply Hcase].
+erewrite list_cases_fv; [done|apply Hcase].
 eapply find_none; [apply H|apply elem_of_list_In, Hcase].
 Qed.
+
+End Counterexample_search.
 
 Theorem deduction_complete p q :
   (∀ Γ, realizes Γ p q) -> p ⊢ q.
 Proof.
 intros; apply d_impl_revert_top.
-apply counter_example_complete.
-destruct (counter_example _) eqn:E; [exfalso|done].
-apply counter_example_sound in E as [Γ HΓ]; apply HΓ.
+apply counterexample_complete.
+destruct (counterexample _) eqn:E; [exfalso|done].
+apply counterexample_sound in E as [Γ HΓ]; apply HΓ.
 apply realizes_impl, H.
 Qed.

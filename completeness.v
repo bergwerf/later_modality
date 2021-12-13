@@ -195,7 +195,7 @@ disj_r; done.
 Qed.
 
 Lemma d_big_disj_elim ps q :
-  (∀ p, In p ps -> p ⊢ q) -> ⋁ ps ⊢ q.
+  (∀ p, p ∈ ps -> p ⊢ q) -> ⋁ ps ⊢ q.
 Proof.
 induction ps; simpl; intros. constructor.
 eapply d_disj_elim. done. all: clr_l.
@@ -376,7 +376,7 @@ apply find_some in H; apply H.
 Qed.
 
 Lemma all_cases_fv case fv md :
-  In case (all_cases fv md) -> foldl max 0 (map fst case) = fv.
+  case ∈ all_cases fv md -> foldl max 0 (map fst case) = fv.
 Proof.
 (*
 Although this is easy to prove, I have skipped it because the case unfolding
@@ -397,7 +397,7 @@ reduce the formula f.
 Admitted.
 
 Lemma all_cases_complete fv md :
-  ⊤ ⊢ ⋁ map (encode_case md) (all_cases fv md).
+  ⊤ ⊢ ⋁ (encode_case md <$> all_cases fv md).
 Proof.
 (*
 This is challenging, I do not yet know exactly how to approach this proof.
@@ -412,10 +412,10 @@ Proof.
 unfold counter_example; intros. ecut.
 apply all_cases_complete with (fv:=FV f)(md:=MD f).
 eapply d_big_disj_elim; intros p Hp.
-apply in_map_iff in Hp as (case & <- & Hcase).
+apply elem_of_list_fmap in Hp as (case & -> & Hcase).
 apply check_case_complete. done.
 erewrite all_cases_fv; [done|apply Hcase].
-eapply find_none; [apply H|apply Hcase].
+eapply find_none; [apply H|apply elem_of_list_In, Hcase].
 Qed.
 
 Theorem deduction_complete p q :

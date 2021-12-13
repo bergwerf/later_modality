@@ -78,6 +78,7 @@ Inductive deduction : form term -> form term -> Prop :=
 where
 "p ⊢ q" := (deduction p q).
 
+Ltac inv H := inversion H; subst.
 Ltac cut x := transitivity x.
 Ltac ecut := etransitivity.
 Ltac refl := reflexivity.
@@ -194,6 +195,15 @@ clr_l; disj_l; disj_l; done.
 disj_r; done.
 Qed.
 
+Lemma d_big_disj_intro p q qs :
+  q ∈ qs -> p ⊢ q -> p ⊢ ⋁ qs.
+Proof.
+induction qs; simpl; intros.
+apply not_elem_of_nil in H; done.
+inv H; [disj_l|disj_r]. done.
+apply IHqs; done.
+Qed.
+
 Lemma d_big_disj_elim ps q :
   (∀ p, p ∈ ps -> p ⊢ q) -> ⋁ ps ⊢ q.
 Proof.
@@ -203,6 +213,11 @@ apply H; left; done.
 apply IHps; intros.
 apply H; right; done.
 Qed.
+
+Lemma d_big_disj_subseteq ps qs :
+  ps ⊆ qs -> ⋁ ps ⊢ ⋁ qs.
+Proof.
+Admitted.
 
 End Deductions.
 
@@ -336,11 +351,13 @@ Fixpoint grow t x :=
   end.
 
 Definition perm_trees xs :=
-  foldl (λ ts x, flat_map (λ t, grow t x) ts) [Leaf] xs.
+  foldr (λ x ts, flat_map (λ t, grow t x) ts) [Leaf] xs.
 
 End Permutation_trees.
 
 Section Permutation_deduction.
+
+Implicit Types xs : list nat.
 
 Fixpoint perm_atoms xs :=
   match xs with
@@ -349,9 +366,23 @@ Fixpoint perm_atoms xs :=
   | x :: (y :: _) as xs' => (#x ⟹ #y) :: perm_atoms xs'
   end.
 
-Lemma d_flatten_perm_trees xs :
-  ⊤ ⊢ ⋁ ((λ perm, ⋁ perm_atoms perm) <$> (flatten <$> perm_trees xs)).
+Definition tree_form t := ⋀ perm_atoms (flatten t).
+
+Lemma d_grow t x :
+  tree_form t ⊢ ⋁ (tree_form <$> grow t x).
 Proof.
+(* Is this the most efficient way to format this? *)
+Admitted.
+
+Lemma d_perm_trees xs :
+  ⊤ ⊢ ⋁ (tree_form <$> perm_trees xs).
+Proof.
+induction xs as [|x xs]; simpl. disj_l; constructor.
+ecut; [apply IHxs|clear IHxs]. apply d_big_disj_elim; intros.
+apply elem_of_list_fmap in H as (t & -> & H).
+ecut. apply d_grow with (x:=x).
+apply d_big_disj_subseteq.
+(* We need a lemma about fmap and flat_map, or replace flat_map. *)
 Admitted.
 
 End Permutation_deduction.
@@ -361,13 +392,13 @@ Section Counterexample_search.
 Definition cons_prod {X} (hds : list X) (tls : list (list X))
   : list (list X) := flat_map (λ x, cons x <$> tls) hds.
 
-Fixpoint case_formula (d_max : nat) (case : list (nat * nat)) :=
+Fixpoint case_form (d_max : nat) (case : list (nat * nat)) :=
   match case with
   | [] => ⊤ | [_] => ⊤
   | (i, d) :: ((j, _) :: _) as case' =>
     if d =? d_max
-    then (Nat.iter d f_Later (#i) ⟹ #j) `∧` case_formula d_max case'
-    else (Nat.iter d f_Later (#i) ⟺ #j) `∧` case_formula d_max case'
+    then (Nat.iter d f_Later (#i) ⟹ #j) `∧` case_form d_max case'
+    else (Nat.iter d f_Later (#i) ⟺ #j) `∧` case_form d_max case'
   end.
 
 Fixpoint case_context (case : list (nat * nat)) (acc : nat) (i : nat) : Sω :=
@@ -429,7 +460,7 @@ Admitted.
 Lemma check_case_complete f d_max case :
   MD f <= d_max ->
   FV f <= foldl max 0 case.*1 ->
-  check_case f case = false -> case_formula d_max case ⊢ f.
+  check_case f case = false -> case_form d_max case ⊢ f.
 Proof.
 (*
 This is quite a bit of work. The case must have a sufficient variable range and
@@ -439,7 +470,7 @@ reduce the formula f.
 Admitted.
 
 Lemma list_cases_complete fv md :
-  ⊤ ⊢ ⋁ (case_formula md <$> list_cases fv md).
+  ⊤ ⊢ ⋁ (case_form md <$> list_cases fv md).
 Proof.
 (*
 This is challenging, I do not yet know exactly how to approach this proof.

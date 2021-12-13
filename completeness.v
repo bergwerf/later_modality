@@ -52,6 +52,8 @@ Notation "p ⟹ q" := (f_Op Impl p q) (at level 54, right associativity).
 Notation "p `∧` q" := (f_Op Conj p q) (at level 56, left associativity).
 Notation "p `∨` q" := (f_Op Disj p q) (at level 56, left associativity).
 Notation "p ⟺ q" := (p ⟹ q `∧` q ⟹ p) (at level 54).
+Notation "⋀ fs" := (f_big Conj ⊤ fs) (at level 57).
+Notation "⋁ fs" := (f_big Disj ⊥ fs) (at level 57).
 
 Reserved Notation "p ⊢ q" (at level 70).
 Inductive deduction : form term -> form term -> Prop :=
@@ -193,7 +195,7 @@ disj_r; done.
 Qed.
 
 Lemma d_big_disj_elim ps q :
-  (∀ p, In p ps -> p ⊢ q) -> f_big Disj ⊥ ps ⊢ q.
+  (∀ p, In p ps -> p ⊢ q) -> ⋁ ps ⊢ q.
 Proof.
 induction ps; simpl; intros. constructor.
 eapply d_disj_elim. done. all: clr_l.
@@ -395,7 +397,7 @@ reduce the formula f.
 Admitted.
 
 Lemma all_cases_complete fv md :
-  ⊤ ⊢ f_big Disj ⊥ (map (encode_case md) (all_cases fv md)).
+  ⊤ ⊢ ⋁ map (encode_case md) (all_cases fv md).
 Proof.
 (*
 This is challenging, I do not yet know exactly how to approach this proof.

@@ -4,7 +4,7 @@ A constructive completeness proof for the later modality
 *)
 
 Require Import Nat.
-From stdpp Require Import list sets.
+From stdpp Require Import list.
 
 Inductive term :=
   | t_False
@@ -181,6 +181,16 @@ apply d_later_elim. ecut; [|apply d_later_impl].
 apply d_impl_intro; clr_l; done.
 Qed.
 
+Lemma d_compare_weak p q :
+  ⊢ p ⟹ q `∨` q ⟹ p.
+Proof.
+eapply d_disj_elim.
+clr; apply d_compare with (p:=p)(q:=q).
+clr_l; disj_l; done. clr_l; disj_r.
+eapply d_impl_intro, d_impl_elim.
+clr_r; done. clr_l; constructor.
+Qed.
+
 Lemma d_big_disj_intro p q qs :
   q ∈ qs -> p ⊢ q -> p ⊢ ⋁ qs.
 Proof.
@@ -328,12 +338,43 @@ Fixpoint perm_clauses xs :=
   | x :: (y :: _) as xs' => (#x ⟹ #y) :: perm_clauses xs'
   end.
 
+Definition perm_form xs := ⋀ perm_clauses xs.
+
+Lemma d_interleave x xs :
+  perm_form xs ⊢ ⋁ (perm_form <$> interleave x xs).
+Proof.
+induction xs as [|y xs].
+unfold perm_form; simpl. disj_l; constructor.
+simpl interleave; rewrite fmap_cons; simpl.
+eapply d_disj_elim; [|disj_l|disj_r].
+clr; apply d_compare_weak with (p:=#x)(q:=#y).
+Admitted.
+
+Lemma subseteq_fmap {X Y} (f : X -> Y) (l l' : list X) :
+  l ⊆ l' -> f <$> l ⊆ f <$> l'.
+Proof.
+Admitted.
+
+Lemma subseteq_mbind {X Y} (f : X -> list Y) x (xs : list X) :
+  x ∈ xs -> f x ⊆ xs ≫= f.
+Proof.
+Admitted.
+
+Lemma d_bind_interleave x xss :
+  ⋁ (perm_form <$> xss) ⊢ ⋁ (perm_form <$> xss ≫= interleave x).
+Proof.
+apply d_big_disj_elim; intros.
+apply elem_of_list_fmap in H as (xs & -> & H).
+ecut; [apply d_interleave with (x:=x)|apply d_big_disj_subseteq].
+apply subseteq_fmap, subseteq_mbind, H.
+Qed.
+
 Lemma d_permutations xs :
-  ⊢ ⋁ ((λ xs', ⋀ perm_clauses xs') <$> permutations xs).
+  ⊢ ⋁ (perm_form <$> permutations xs).
 Proof.
 induction xs as [|x xs]; simpl. disj_l; constructor.
-ecut; [apply IHxs|clear IHxs].
-Admitted.
+ecut; [apply IHxs|apply d_bind_interleave].
+Qed.
 
 End Permutation_deduction.
 
@@ -394,8 +435,7 @@ Lemma list_cases_fv case fv md :
   case ∈ list_cases fv md -> foldl max 0 case.*1 = fv.
 Proof.
 unfold list_cases; intros.
-eapply elem_of_bind in H as (xs & H1 & H2).
-eapply elem_of_mapM in H1.
+eapply elem_of_list_bind in H as (xs & H1 & H2).
 (*
 Do we really want to use foldl max?
 This depends on the proof of eval_case_complete.

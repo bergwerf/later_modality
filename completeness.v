@@ -45,6 +45,7 @@ Global Instance fmap_form : FMap form :=
     | f_Conn c p q => f_Conn c (rec p) (rec q)
     end.
 
+Definition f_later {X} n (f : form X) := Nat.iter n f_Later f.
 Definition f_big {X} c (f0 : form X) fs := foldr (f_Conn c) f0 fs.
 
 Notation "⊥" := (f_Term t_False).
@@ -383,10 +384,9 @@ Section Counterexample_search.
 Fixpoint case_form (d_max : nat) (case : list (nat * nat)) :=
   match case with
   | [] => ⊤ | [_] => ⊤
-  | (i, d) :: ((j, _) :: _) as case' =>
-    if d =? d_max
-    then (Nat.iter d f_Later (#i) ⟹ #j) `∧` case_form d_max case'
-    else (Nat.iter d f_Later (#i) ⟺ #j) `∧` case_form d_max case'
+  | (i, d) :: ((j, _) :: _) as case' => if d <? d_max
+    then (f_later d (#i) ⟺ #j) `∧` case_form d_max case'
+    else (f_later d (#i) ⟹ #j) `∧` case_form d_max case'
   end.
 
 Fixpoint case_context (case : list (nat * nat)) (acc : nat) (i : nat) : Sω :=
@@ -431,26 +431,23 @@ intros; eexists; rewrite <-eval_case_spec with (case:=case).
 apply find_some in H as [_ <-]; simpl; destruct (eval_case _); done.
 Qed.
 
-Lemma list_cases_fv case fv md :
-  case ∈ list_cases fv md -> foldl max 0 case.*1 = fv.
+Definition case_range fv (case : list (nat * nat)) :=
+  ∀ i, i < fv -> ∃ d, (i, d) ∈ case.
+
+Lemma list_cases_range case fv md :
+  case ∈ list_cases fv md -> case_range fv case.
 Proof.
 unfold list_cases; intros.
 eapply elem_of_list_bind in H as (xs & H1 & H2).
-(*
-Do we really want to use foldl max?
-This depends on the proof of eval_case_complete.
-*)
 Admitted.
 
 Lemma eval_case_complete f d_max case :
-  MD f <= d_max ->
-  FV f <= foldl max 0 case.*1 ->
+  MD f <= d_max -> case_range (FV f) case ->
   eval_case f case = true -> case_form d_max case ⊢ f.
 Proof.
 (*
-This is quite a bit of work. The case must have a sufficient variable range and
-modal depth. Then the case hypothesis includes all the inequalities needed to
-reduce the formula f.
+The case must have a sufficient variable range and modal depth. Then the case
+hypothesis includes all the inequalities needed to reduce the formula f.
 *)
 Admitted.
 
@@ -458,9 +455,8 @@ Lemma list_cases_complete fv md :
   ⊢ ⋁ (case_form md <$> list_cases fv md).
 Proof.
 (*
-This is challenging, I do not yet know exactly how to approach this proof.
-Intuitively this should hold; every situation satisfies one of the cases.
-But how do we translate this into a deduction?
+First we split into all possible permutations, then for each permutation we
+split each implication into a finite number of distances.
 *)
 Admitted.
 
@@ -472,7 +468,7 @@ apply list_cases_complete with (fv:=FV f)(md:=MD f).
 eapply d_big_disj_elim; intros p Hp.
 apply elem_of_list_fmap in Hp as (case & -> & Hcase).
 apply eval_case_complete. done.
-erewrite list_cases_fv; [done|apply Hcase].
+eapply list_cases_range, Hcase.
 eapply find_none, negb_false_iff in H.
 apply H. apply elem_of_list_In, Hcase.
 Qed.

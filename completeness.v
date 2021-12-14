@@ -4,7 +4,7 @@ A constructive completeness proof for the later modality
 *)
 
 Require Import Nat.
-From stdpp Require Import list.
+From stdpp Require Import list sets.
 
 Inductive term :=
   | t_False
@@ -317,68 +317,27 @@ Qed.
 
 End Reference_model.
 
-Section Permutation_trees.
-
-Context {X : Type}.
-
-Inductive tree :=
-  | Leaf
-  | Node (x : X) (l r : tree).
-
-Fixpoint flatten t :=
-  match t with
-  | Leaf => []
-  | Node x l r => flatten l ++ x :: flatten r
-  end.
-
-Fixpoint grow t x :=
-  match t with
-  | Leaf => [Node x Leaf Leaf]
-  | Node y l r =>
-    ((λ l, Node y l r) <$> grow l x) ++
-    ((λ r, Node y l r) <$> grow r x)
-  end.
-
-Definition perm_trees xs :=
-  foldr (λ x ts, t ← ts; grow t x) [Leaf] xs.
-
-End Permutation_trees.
-
 Section Permutation_deduction.
 
 Implicit Types xs : list nat.
 
-Fixpoint perm_atoms xs :=
+Fixpoint perm_clauses xs :=
   match xs with
   | [] => []
   | [_] => []
-  | x :: (y :: _) as xs' => (#x ⟹ #y) :: perm_atoms xs'
+  | x :: (y :: _) as xs' => (#x ⟹ #y) :: perm_clauses xs'
   end.
 
-Definition tree_form t := ⋀ perm_atoms (flatten t).
-
-Lemma d_grow t x :
-  tree_form t ⊢ ⋁ (tree_form <$> grow t x).
-Proof.
-(* Is this the most efficient way to format this? *)
-Admitted.
-
-Lemma d_perm_trees xs :
-  ⊤ ⊢ ⋁ (tree_form <$> perm_trees xs).
+Lemma d_permutations xs :
+  ⊢ ⋁ ((λ xs', ⋀ perm_clauses xs') <$> permutations xs).
 Proof.
 induction xs as [|x xs]; simpl. disj_l; constructor.
-ecut; [apply IHxs|clear IHxs]. apply d_big_disj_elim; intros.
-apply elem_of_list_fmap in H as (t & -> & H).
-ecut. apply d_grow with (x:=x).
-apply d_big_disj_subseteq.
+ecut; [apply IHxs|clear IHxs].
 Admitted.
 
 End Permutation_deduction.
 
 Section Counterexample_search.
-
-Definition cons_prod {X} (hds : list X) (tls : list (list X))
-  : list (list X) := flat_map (λ x, cons x <$> tls) hds.
 
 Fixpoint case_form (d_max : nat) (case : list (nat * nat)) :=
   match case with
@@ -397,20 +356,17 @@ Fixpoint case_context (case : list (nat * nat)) (acc : nat) (i : nat) : Sω :=
     else case_context case' (acc + S d) i
   end.
 
-Definition check_case (f : form term) (case : list (nat * nat)) :=
-  match (eval (interp (case_context case 0) <$> f)) with
-  | Finite _ => true
-  | Infinite => false
-  end.
+Definition eval_case (f : form term) (case : list (nat * nat)) :=
+  Sω_leb Infinite (eval (interp (case_context case 0) <$> f)).
 
 Definition list_cases fv md :=
-  let perms := flatten <$> perm_trees (seq 0 fv) in
-  let skips := Nat.iter fv (cons_prod (seq 0 (S md))) [[]] in
-  let cases := perms ≫= (λ perm, zip perm <$> skips) in
+  let skips := seq 0 (S md) in
+  let perms := permutations (seq 0 fv) in
+  let cases := xs ← perms; mapM (λ i, pair i <$> skips) xs in
   cases.
 
 Definition counterexample (f : form term) :=
-  find (check_case f) (list_cases (FV f) (MD f)).
+  find (negb ∘ eval_case f) (list_cases (FV f) (MD f)).
 
 Example not_strong_later_inj :
   counterexample ((▷#0 ⟹ ▷#1) ⟹ #0 ⟹ #1) = Some [(1, 0); (0, 0)].
@@ -420,35 +376,36 @@ Example leftover_middle_case :
   counterexample (#0 ⟹ #1 `∨` ▷▷#1 ⟹ #0) = Some [(1, 0); (0, 0)].
 Proof. done. Qed.
 
-Lemma check_case_sound f case :
-  check_case f case = true -> ∃ Γ, ¬ realizes Γ ⊤ f.
+Lemma eval_case_spec f case :
+  eval_case f case = true <-> realizes (case_context case 0) ⊤ f.
 Proof.
-intros; exists (case_context case 0); intros C.
-unfold check_case, realizes in *; simpl in *.
-destruct (eval _); done.
+unfold eval_case, realizes;
+rewrite Sω_le_leb; done.
 Qed.
 
 Lemma counterexample_sound f case :
   counterexample f = Some case -> ∃ Γ, ¬ realizes Γ ⊤ f.
 Proof. 
-intros; eapply check_case_sound.
-apply find_some in H; apply H.
+intros; eexists; rewrite <-eval_case_spec with (case:=case).
+apply find_some in H as [_ <-]; simpl; destruct (eval_case _); done.
 Qed.
 
 Lemma list_cases_fv case fv md :
   case ∈ list_cases fv md -> foldl max 0 case.*1 = fv.
 Proof.
 unfold list_cases; intros.
-apply elem_of_list_In, in_flat_map in H as (x & H1 & H2).
-apply elem_of_list_In, elem_of_list_fmap in H1
-as (perm & -> & H1), H2 as (skips & -> & H2).
-rewrite fst_zip.
+eapply elem_of_bind in H as (xs & H1 & H2).
+eapply elem_of_mapM in H1.
+(*
+Do we really want to use foldl max?
+This depends on the proof of eval_case_complete.
+*)
 Admitted.
 
-Lemma check_case_complete f d_max case :
+Lemma eval_case_complete f d_max case :
   MD f <= d_max ->
   FV f <= foldl max 0 case.*1 ->
-  check_case f case = false -> case_form d_max case ⊢ f.
+  eval_case f case = true -> case_form d_max case ⊢ f.
 Proof.
 (*
 This is quite a bit of work. The case must have a sufficient variable range and
@@ -474,9 +431,10 @@ unfold counterexample; intros. ecut.
 apply list_cases_complete with (fv:=FV f)(md:=MD f).
 eapply d_big_disj_elim; intros p Hp.
 apply elem_of_list_fmap in Hp as (case & -> & Hcase).
-apply check_case_complete. done.
+apply eval_case_complete. done.
 erewrite list_cases_fv; [done|apply Hcase].
-eapply find_none; [apply H|apply elem_of_list_In, Hcase].
+eapply find_none, negb_false_iff in H.
+apply H. apply elem_of_list_In, Hcase.
 Qed.
 
 End Counterexample_search.

@@ -1,4 +1,7 @@
-(* A decision procedure for propositional logic with the later modality. *)
+(*
+A constructive completeness proof for the later modality
+========================================================
+*)
 
 Require Import Nat.
 From stdpp Require Import list.
@@ -8,30 +11,30 @@ Inductive term :=
   | t_True
   | t_Prop (i : nat).
 
-Inductive operator := Conj | Disj | Impl.
+Inductive connective := Conj | Disj | Impl.
 
 Inductive form (X : Type) :=
   | f_Term (x : X)
   | f_Later (p : form X)
-  | f_Op (op : operator) (p q : form X).
+  | f_Conn (c : connective) (p q : form X).
 
 Arguments f_Term {_}.
 Arguments f_Later {_}.
-Arguments f_Op {_}.
+Arguments f_Conn {_}.
 
 Fixpoint FV (f : form term) :=
   match f with
   | f_Term (t_Prop i) => S i
   | f_Term _ => 0
   | f_Later p => FV p
-  | f_Op _ p q => max (FV p) (FV q)
+  | f_Conn _ p q => max (FV p) (FV q)
   end.
 
 Fixpoint MD (f : form term) :=
   match f with
   | f_Term _ => 0
   | f_Later p => S (MD p)
-  | f_Op _ p q => max (MD p) (MD q)
+  | f_Conn _ p q => max (MD p) (MD q)
   end.
 
 Global Instance fmap_form : FMap form :=
@@ -39,44 +42,55 @@ Global Instance fmap_form : FMap form :=
     match r with
     | f_Term x => f_Term (f x)
     | f_Later p => f_Later (rec p)
-    | f_Op op p q => f_Op op (rec p) (rec q)
+    | f_Conn c p q => f_Conn c (rec p) (rec q)
     end.
 
-Definition f_big {X} op (f0 : form X) fs := foldr (f_Op op) f0 fs.
+Definition f_big {X} c (f0 : form X) fs := foldr (f_Conn c) f0 fs.
 
 Notation "⊥" := (f_Term t_False).
 Notation "⊤" := (f_Term t_True).
 Notation "# i" := (f_Term (t_Prop i)) (at level 40, format "# i").
 Notation "▷ p" := (f_Later p) (at level 49, right associativity, format "▷ p").
-Notation "p ⟹ q" := (f_Op Impl p q) (at level 54, right associativity).
-Notation "p `∧` q" := (f_Op Conj p q) (at level 56, left associativity).
-Notation "p `∨` q" := (f_Op Disj p q) (at level 56, left associativity).
+Notation "p `∧` q" := (f_Conn Conj p q) (at level 56, left associativity).
+Notation "p `∨` q" := (f_Conn Disj p q) (at level 56, left associativity).
+Notation "p ⟹ q" := (f_Conn Impl p q) (at level 54, right associativity).
 Notation "p ⟺ q" := (p ⟹ q `∧` q ⟹ p) (at level 54).
 Notation "⋀ fs" := (f_big Conj ⊤ fs) (at level 57).
 Notation "⋁ fs" := (f_big Disj ⊥ fs) (at level 57).
 
+(*
+Why use a binary sequent?
+-------------------------
+The sequent could be replaced with an implication, e.g. we could write something
+like ⊢ p ⟹ q instead of p ⊢ q. But there are a few advantages of using a binary
+sequent relation: (1) Using tactics: a binary relation allows setoid rewriting
+and pre-order based tactics. (2) Readability: the sequent avoids parentheses in
+some cases, and creates a clear separation between hypothesis and goal.
+*)
+
 Reserved Notation "p ⊢ q" (at level 70).
+Reserved Notation "⊢ q" (at level 70).
+
 Inductive deduction : form term -> form term -> Prop :=
-  | d_refl p : p ⊢ p
-  | d_trans p q r : p ⊢ q -> q ⊢ r -> p ⊢ r
-  | d_true_intro p : p ⊢ ⊤
-  | d_false_elim p : ⊥ ⊢ p
-  | d_conj_intro c p q : c ⊢ p -> c ⊢ q -> c ⊢ p `∧` q
-  | d_conj_elim_l p q : p `∧` q ⊢ p
-  | d_conj_elim_r p q : p `∧` q ⊢ q
-  | d_disj_intro_l p q : p ⊢ p `∨` q
-  | d_disj_intro_r p q : q ⊢ p `∨` q
-  | d_disj_elim c p q r : c ⊢ p `∨` q -> c `∧` p ⊢ r -> c `∧` q ⊢ r -> c ⊢ r
-  | d_impl_intro c p q : c `∧` p ⊢ q -> c ⊢ p ⟹ q
-  | d_impl_elim c p q : c ⊢ p ⟹ q -> c ⊢ p -> c ⊢ q
-  | d_later_intro p : p ⊢ ▷p
-  | d_later_top p : ⊤ ⊢ ▷p -> ⊤ ⊢ p
-  | d_later_Löb p : ▷p ⊢ p -> ⊤ ⊢ p
-  | d_later_mono p q : p ⊢ q -> ▷p ⊢ ▷q
-  | d_later_conj p q : ▷p `∧` ▷q ⊢ ▷(p `∧` q)
-  | d_later_cmp p q : ⊤ ⊢ p ⟹ q `∨` ▷q ⟹ p
-where
-"p ⊢ q" := (deduction p q).
+  | d_refl p             : p ⊢ p
+  | d_trans p q r        : p ⊢ q -> q ⊢ r -> p ⊢ r
+  | d_true_intro p       : p ⊢ ⊤
+  | d_false_elim p       : ⊥ ⊢ p
+  | d_conj_intro c p q   : c ⊢ p -> c ⊢ q -> c ⊢ p `∧` q
+  | d_conj_elim_l p q    : p `∧` q ⊢ p
+  | d_conj_elim_r p q    : p `∧` q ⊢ q
+  | d_disj_intro_l p q   : p ⊢ p `∨` q
+  | d_disj_intro_r p q   : q ⊢ p `∨` q
+  | d_disj_elim c p q r  : c ⊢ p `∨` q -> c `∧` p ⊢ r -> c `∧` q ⊢ r -> c ⊢ r
+  | d_impl_intro c p q   : c `∧` p ⊢ q -> c ⊢ p ⟹ q
+  | d_impl_elim c p q    : c ⊢ p ⟹ q -> c ⊢ p -> c ⊢ q
+  | d_later_intro p      : p ⊢ ▷p
+  | d_later_elim p       : ⊢ ▷p -> ⊢ p
+  | d_later_fixp p       : ▷p ⊢ p -> ⊢ p
+  | d_later_mono p q     : p ⊢ q -> ▷p ⊢ ▷q
+  | d_later_conj p q     : ▷p `∧` ▷q ⊢ ▷(p `∧` q)
+  | d_compare p q        : ⊢ p ⟹ q `∨` ▷q ⟹ p
+where "p ⊢ q" := (deduction p q) and "⊢ q" := (⊤ ⊢ q).
 
 Ltac inv H := inversion H; subst.
 Ltac cut x := transitivity x.
@@ -94,32 +108,26 @@ split. intros p; apply d_refl.
 intros p q r; apply d_trans.
 Defined.
 
-Lemma d_weaken_top p q : ⊤ ⊢ q -> p ⊢ q.
+Lemma d_clr p q : ⊢ q -> p ⊢ q.
 Proof. ecut. apply d_true_intro. done. Qed.
 
-Lemma d_weaken_l c p q : c ⊢ q -> c `∧` p ⊢ q.
-Proof. ecut. conj_l. done. Qed.
-
-Lemma d_weaken_r c p q : c ⊢ q -> p `∧` c ⊢ q.
+Lemma d_clr_l c p q : c ⊢ q -> p `∧` c ⊢ q.
 Proof. ecut. conj_r. done. Qed.
 
-Ltac clr := apply d_weaken_top.
-Ltac clr_l := apply d_weaken_r.
-Ltac clr_r := apply d_weaken_l.
+Lemma d_clr_r c p q : c ⊢ q -> c `∧` p ⊢ q.
+Proof. ecut. conj_l. done. Qed.
+
+Ltac clr := apply d_clr.
+Ltac clr_l := apply d_clr_l.
+Ltac clr_r := apply d_clr_r.
+
+Lemma d_revert c p q : c ⊢ p ⟹ q -> c `∧` p ⊢ q.
+Proof. intros; eapply d_impl_elim; [clr_r; done|conj_r]. Qed.
+
+Lemma d_revert_top p q : ⊢ p ⟹ q -> p ⊢ q.
+Proof. intros; eapply d_impl_elim; [clr; done|refl]. Qed.
 
 Section Deductions.
-
-Lemma d_impl_revert c p q :
-  c ⊢ p ⟹ q -> c `∧` p ⊢ q.
-Proof.
-intros; eapply d_impl_elim; [clr_r; done|conj_r].
-Qed.
-
-Lemma d_impl_revert_top p q :
-  ⊤ ⊢ p ⟹ q -> p ⊢ q.
-Proof.
-intros; eapply d_impl_elim; [clr; done|refl].
-Qed.
 
 Lemma d_conj_comm p q :
   p `∧` q ⊢ q `∧` p.
@@ -136,14 +144,14 @@ clr_r; clr_l; done.
 clr_l; done.
 Qed.
 
-Lemma d_strong_Löb p :
+Lemma d_strong_fixp p :
   ▷p ⟹ p ⊢ p.
 Proof.
 eapply d_impl_elim; [clr|refl].
-eapply d_later_Löb.
+eapply d_later_fixp.
 eapply d_impl_intro.
 eapply d_impl_elim; [conj_r|].
-ecut. apply d_conj_comm. apply d_impl_revert.
+ecut. apply d_conj_comm. apply d_revert.
 ecut. apply d_later_intro. apply d_impl_intro.
 ecut. apply d_later_conj. apply d_later_mono.
 eapply d_impl_elim; [conj_r|conj_l].
@@ -153,12 +161,12 @@ Lemma d_later_impl p q :
   ▷p ⟹ ▷q ⊢ ▷(p ⟹ q).
 Proof.
 eapply d_disj_elim.
-clr; apply d_later_cmp with (p:=p)(q:=q).
+clr; apply d_compare with (p:=p)(q:=q).
 - ecut. conj_r. apply d_later_intro.
 - cut (▷q).
   eapply d_impl_elim. clr_r; done.
   ecut; [|apply d_later_intro].
-  ecut; [|apply d_strong_Löb].
+  ecut; [|apply d_strong_fixp].
   apply d_impl_intro.
   eapply d_impl_elim. clr_r; clr_l; done.
   eapply d_impl_elim. clr_r; clr_r; done. clr_l; done.
@@ -169,30 +177,8 @@ Lemma d_later_inj p q :
   ▷p ⊢ ▷q -> p ⊢ q.
 Proof.
 intros; eapply d_impl_elim; [clr|refl].
-apply d_later_top. ecut; [|apply d_later_impl].
+apply d_later_elim. ecut; [|apply d_later_impl].
 apply d_impl_intro; clr_l; done.
-Qed.
-
-Lemma d_except_zero p :
-  ▷p ⊢ ▷⊥ `∨` ▷⊥ ⟹ p.
-Proof.
-eapply d_disj_elim.
-clr; apply d_later_cmp with (p:=p)(q:=⊥).
-2: clr_l; disj_r; done.
-disj_l; ecut. eapply d_conj_intro. clr_r; refl.
-clr_l. ecut. apply d_later_intro. refl.
-ecut. apply d_later_conj. apply d_later_mono.
-eapply d_impl_elim. clr_l; refl. clr_r; refl.
-Qed.
-
-Lemma d_trichotomy p q :
-  ⊤ ⊢ ▷p ⟹ q `∨` p ⟺ q `∨` ▷q ⟹ p.
-Proof.
-eapply d_disj_elim; try clr_l. apply d_later_cmp with (p:=p)(q:=q).
-eapply d_disj_elim. clr; apply d_later_cmp with (p:=q)(q:=p).
-disj_l; disj_r; done.
-clr_l; disj_l; disj_l; done.
-disj_r; done.
 Qed.
 
 Lemma d_big_disj_intro p q qs :
@@ -217,7 +203,10 @@ Qed.
 Lemma d_big_disj_subseteq ps qs :
   ps ⊆ qs -> ⋁ ps ⊢ ⋁ qs.
 Proof.
-Admitted.
+intros; apply d_big_disj_elim; intros.
+apply d_big_disj_intro with (q:=p).
+auto. done.
+Qed.
 
 End Deductions.
 
@@ -272,9 +261,9 @@ Fixpoint eval (f : form Sω) :=
   match f with
   | f_Term x => x
   | f_Later p => Sω_succ (eval p)
-  | f_Op Conj p q => Sω_min (eval p) (eval q)
-  | f_Op Disj p q => Sω_max (eval p) (eval q)
-  | f_Op Impl p q =>
+  | f_Conn Conj p q => Sω_min (eval p) (eval q)
+  | f_Conn Disj p q => Sω_max (eval p) (eval q)
+  | f_Conn Impl p q =>
     if Sω_leb (eval p) (eval q)
     then Infinite else eval q
   end.
@@ -313,7 +302,7 @@ Lemma realizes_impl p q Γ :
   realizes Γ p q -> realizes Γ ⊤ (p ⟹ q).
 Proof.
 unfold realizes; simpl; repeat destruct (eval _); simpl; try done.
-destruct (_ <=? _) eqn:E. done. apply Nat.leb_gt in E; lia.
+intros; apply Nat.leb_le in H; rewrite H; done.
 Qed.
 
 Theorem deduction_sound Γ p q :
@@ -351,7 +340,7 @@ Fixpoint grow t x :=
   end.
 
 Definition perm_trees xs :=
-  foldr (λ x ts, flat_map (λ t, grow t x) ts) [Leaf] xs.
+  foldr (λ x ts, t ← ts; grow t x) [Leaf] xs.
 
 End Permutation_trees.
 
@@ -382,7 +371,6 @@ ecut; [apply IHxs|clear IHxs]. apply d_big_disj_elim; intros.
 apply elem_of_list_fmap in H as (t & -> & H).
 ecut. apply d_grow with (x:=x).
 apply d_big_disj_subseteq.
-(* We need a lemma about fmap and flat_map, or replace flat_map. *)
 Admitted.
 
 End Permutation_deduction.
@@ -418,7 +406,7 @@ Definition check_case (f : form term) (case : list (nat * nat)) :=
 Definition list_cases fv md :=
   let perms := flatten <$> perm_trees (seq 0 fv) in
   let skips := Nat.iter fv (cons_prod (seq 0 (S md))) [[]] in
-  let cases := flat_map (λ perm, zip perm <$> skips) perms in
+  let cases := perms ≫= (λ perm, zip perm <$> skips) in
   cases.
 
 Definition counterexample (f : form term) :=
@@ -470,7 +458,7 @@ reduce the formula f.
 Admitted.
 
 Lemma list_cases_complete fv md :
-  ⊤ ⊢ ⋁ (case_form md <$> list_cases fv md).
+  ⊢ ⋁ (case_form md <$> list_cases fv md).
 Proof.
 (*
 This is challenging, I do not yet know exactly how to approach this proof.
@@ -480,7 +468,7 @@ But how do we translate this into a deduction?
 Admitted.
 
 Theorem counterexample_complete f :
-  counterexample f = None -> ⊤ ⊢ f.
+  counterexample f = None -> ⊢ f.
 Proof.
 unfold counterexample; intros. ecut.
 apply list_cases_complete with (fv:=FV f)(md:=MD f).
@@ -496,7 +484,7 @@ End Counterexample_search.
 Theorem deduction_complete p q :
   (∀ Γ, realizes Γ p q) -> p ⊢ q.
 Proof.
-intros; apply d_impl_revert_top.
+intros; apply d_revert_top.
 apply counterexample_complete.
 destruct (counterexample _) eqn:E; [exfalso|done].
 apply counterexample_sound in E as [Γ HΓ]; apply HΓ.

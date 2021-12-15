@@ -217,6 +217,16 @@ apply d_big_disj_intro with (q:=p).
 auto. done.
 Qed.
 
+Lemma d_impl_iff_r p q :
+  ▷q ⟹ p ⊢ (p ⟹ q) ⟺ q.
+Proof.
+apply d_conj_intro.
+- impl_i; ecut; [|apply d_strong_fixp].
+  impl_i; impl_e. clr_r; clr_l; done.
+  impl_e. clr_r; clr_r; done. clr_l; done.
+- impl_i; impl_i; clr_r; clr_l; done.
+Qed.
+
 End Deductions.
 
 Section Reference_model.
@@ -326,6 +336,27 @@ Qed.
 
 End Reference_model.
 
+Section Reductions.
+
+Definition atom fv md a :=
+  a = ⊤ \/ a = ⊥ \/ ∃ i d, i < fv /\ d <= md /\ a = f_later d (#i).
+
+Variable f : form term.
+Variable c : form term.
+
+Hypothesis determined : ∀ a b,
+  atom (FV f) (S (MD f)) a ->
+  atom (FV f) (S (MD f)) b ->
+  c ⊢ a ⟹ b \/ c ⊢ b ⟹ a.
+
+Lemma d_reduce_to_atom :
+  ∃ a, atom (FV f) (MD f) a /\ c ⊢ f ⟺ a.
+Proof.
+induction f as [[]|p|[] p IHp q IHq]; simpl; intros.
+Admitted.
+
+End Reductions.
+
 Section Permutation_deduction.
 
 Implicit Types xs : list nat.
@@ -415,12 +446,12 @@ End Permutation_deduction.
 
 Section Counterexample_search.
 
-Fixpoint case_form (d_max : nat) (pred : form term) (case : list (nat * nat)) :=
+Fixpoint case_form (md : nat) (pred : form term) (case : list (nat * nat)) :=
   match case with
   | [] => ⊤
-  | (i, d) :: case' => if d <=? d_max
-    then (f_later d pred ⟺ #i) `∧` case_form d_max (#i) case'
-    else (f_later d pred ⟹ #i) `∧` case_form d_max (#i) case'
+  | (i, d) :: case' => if d <? md
+    then (f_later d pred ⟺ #i) `∧` case_form md (#i) case'
+    else (f_later d pred ⟹ #i) `∧` case_form md (#i) case'
   end.
 
 Fixpoint case_context (case : list (nat * nat)) (i : nat) : nat :=
@@ -473,34 +504,46 @@ unfold list_cases; intros.
 eapply elem_of_list_bind in H as (xs & H1 & H2).
 Admitted.
 
-Lemma eval_case_complete f d_max case :
-  MD f <= d_max -> case_range (FV f) case ->
-  eval_case f case = true -> case_form d_max ⊥ case ⊢ f.
+Lemma case_form_determined f a b case :
+  case_range (FV f) case ->
+  atom (FV f) (S (MD f)) a ->
+  atom (FV f) (S (MD f)) b ->
+  case_form (MD f) ⊥ case ⊢ a ⟹ b \/
+  case_form (MD f) ⊥ case ⊢ b ⟹ a.
 Proof.
-(*
-The case must have a sufficient variable range and modal depth. Then the case
-hypothesis includes all the inequalities needed to reduce the formula f.
-*)
 Admitted.
 
-Lemma list_cases_complete fv md :
+Lemma case_form_reduce f  case :
+  case_range (FV f) case ->
+  ∃ a, atom (FV f) (MD f) a /\
+  case_form (MD f) ⊥ case ⊢ f ⟺ a.
+Proof.
+intros; apply d_reduce_to_atom.
+intros; apply case_form_determined; done.
+Qed.
+
+Lemma eval_case_complete f case :
+  case_range (FV f) case ->
+  eval_case f case = true ->
+  case_form (MD f) ⊥ case ⊢ f.
+Proof.
+intros Hfv Heval; apply case_form_reduce in Hfv as (a & H1 & H2).
+ecut; [apply H2|].
+Admitted.
+
+Lemma d_list_cases fv md :
   ⊢ ⋁ (case_form md ⊥ <$> list_cases fv md).
 Proof.
-(*
-First we split into all possible permutations, then for each permutation we
-split each implication into a finite number of distances.
-*)
 Admitted.
 
 Theorem counterexample_complete f :
   counterexample f = None -> ⊢ f.
 Proof.
 unfold counterexample; intros. ecut.
-apply list_cases_complete with (fv:=FV f)(md:=MD f).
+apply d_list_cases with (fv:=FV f)(md:=MD f).
 eapply d_big_disj_elim; intros p Hp.
 apply elem_of_list_fmap in Hp as (case & -> & Hcase).
-apply eval_case_complete. done.
-eapply list_cases_range, Hcase.
+apply eval_case_complete. eapply list_cases_range, Hcase.
 eapply find_none, negb_false_iff in H.
 apply H. apply elem_of_list_In, Hcase.
 Qed.

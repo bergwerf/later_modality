@@ -384,17 +384,21 @@ Qed.
 Lemma atom_later fv md a :
   atom fv md a -> atom fv (S md) (▷a).
 Proof.
-Admitted.
+intros (t & d & H1 & H2 & ->); exists t, (S d);
+simpl; repeat split. done. lia.
+Qed.
 
 Lemma atom_weaken fv md fv' md' a :
   atom fv md a -> fv ≤ fv' -> md ≤ md' -> atom fv' md' a.
 Proof.
-Admitted.
+intros (t & d & H1 & H2 & ->); exists t, d; repeat split.
+destruct t; simpl in *; [done|lia]. lia.
+Qed.
 
 Variable c : form term.
 Variable fv md : nat.
 
-Hypothesis determined : ∀ a b,
+Hypothesis exhaustive : ∀ a b,
   atom fv (S md) a ->
   atom fv (S md) b ->
   c ⊢ a ⟹ b \/ c ⊢ b ⟹ a.
@@ -406,8 +410,8 @@ Proof.
 induction f as [[]|p|[] p IHp q IHq]; simpl; intros Hfv Hmd.
 3-6: destruct IHp as (a & Aa & Ha); try lia.
 4-6: destruct IHq as (b & Ab & Hb); try lia.
-4-5: destruct (determined a b).
-12: destruct (determined a (▷b)). 13: apply atom_later.
+4-5: destruct (exhaustive a b).
+12: destruct (exhaustive a (▷b)). 13: apply atom_later.
 4,5,8,9,12,13: eapply atom_weaken; [eassumption|lia|lia].
 1: exists (f_Term (t_Const b)).
 2: exists (#i). 3: exists (▷a).
@@ -418,6 +422,7 @@ induction f as [[]|p|[] p IHp q IHq]; simpl; intros Hfv Hmd.
 apply atom_const. exists (t_Prop i), 0; simpl; split; [lia|done].
 split; [apply atom_later, Aa|apply d_iff_later, Ha]. all: split.
 1,3,5,7,11: eapply atom_weaken; [eassumption|lia|lia]. 5: apply atom_const.
+(* We need some new tactics to work with deductions. *)
 Admitted.
 
 End Semantic_evaluation.
@@ -578,13 +583,18 @@ unfold list_cases; intros.
 eapply elem_of_list_bind in H as (xs & H1 & H2).
 Admitted.
 
-Lemma case_form_determined f a b case :
-  case_range (FV f) case ->
-  atom (FV f) (S (MD f)) a ->
-  atom (FV f) (S (MD f)) b ->
-  case_form (MD f) ⊥ case ⊢ a ⟹ b \/
-  case_form (MD f) ⊥ case ⊢ b ⟹ a.
+Lemma case_form_exhaustive fv md case a b :
+  case_range fv case ->
+  atom fv (S md) a ->
+  atom fv (S md) b ->
+  case_form md ⊥ case ⊢ a ⟹ b \/
+  case_form md ⊥ case ⊢ b ⟹ a.
 Proof.
+intros.
+pose (ai := eval (interp (Finite ∘ case_context case) <$> a)).
+pose (bi := eval (interp (Finite ∘ case_context case) <$> b)).
+destruct (Sω_leb ai bi) eqn:E; [left|right].
+(* Can we relate Sω_leb judgements to the case formula? *)
 Admitted.
 
 Lemma case_form_reduce f  case :
@@ -593,7 +603,7 @@ Lemma case_form_reduce f  case :
   case_form (MD f) ⊥ case ⊢ f ⟺ a.
 Proof.
 intros; eapply d_reduce_to_atom.
-intros; apply case_form_determined; done.
+intros; eapply case_form_exhaustive.
 all: done.
 Qed.
 

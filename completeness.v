@@ -415,27 +415,25 @@ End Permutation_deduction.
 
 Section Counterexample_search.
 
-Fixpoint case_form (d_max : nat) (case : list (nat * nat)) :=
+Fixpoint case_form (d_max : nat) (pred : form term) (case : list (nat * nat)) :=
   match case with
-  | [] => ⊤ | [_] => ⊤
-  | (i, d) :: ((j, _) :: _) as case' => if d <? d_max
-    then (f_later d (#i) ⟺ #j) `∧` case_form d_max case'
-    else (f_later d (#i) ⟹ #j) `∧` case_form d_max case'
+  | [] => ⊤
+  | (i, d) :: case' => if d <=? d_max
+    then (f_later d pred ⟺ #i) `∧` case_form d_max (#i) case'
+    else (f_later d pred ⟹ #i) `∧` case_form d_max (#i) case'
   end.
 
-Fixpoint case_context (case : list (nat * nat)) (acc : nat) (i : nat) : Sω :=
+Fixpoint case_context (case : list (nat * nat)) (i : nat) : nat :=
   match case with
-  | [] => Finite 0
-  | (j, d) :: case' => if i =? j
-    then Finite acc
-    else case_context case' (acc + S d) i
+  | [] => 0
+  | (j, d) :: case' => d + if i =? j then 0 else case_context case' i
   end.
 
 Definition eval_case (f : form term) (case : list (nat * nat)) :=
-  Sω_leb Infinite (eval (interp (case_context case 0) <$> f)).
+  Sω_leb Infinite (eval (interp (Finite ∘ case_context case) <$> f)).
 
 Definition list_cases fv md :=
-  let skips := seq 0 (S md) in
+  let skips := seq 0 (2 + md) in
   let perms := permutations (seq 0 fv) in
   let cases := xs ← perms; mapM (λ i, pair i <$> skips) xs in
   cases.
@@ -444,15 +442,15 @@ Definition counterexample (f : form term) :=
   find (negb ∘ eval_case f) (list_cases (FV f) (MD f)).
 
 Example not_strong_later_inj :
-  counterexample ((▷#0 ⟹ ▷#1) ⟹ #0 ⟹ #1) = Some [(1, 0); (0, 0)].
+  counterexample ((▷#0 ⟹ ▷#1) ⟹ #0 ⟹ #1) = Some [(1, 0); (0, 1)].
 Proof. done. Qed.
 
-Example leftover_middle_case :
-  counterexample (#0 ⟹ #1 `∨` ▷▷#1 ⟹ #0) = Some [(1, 0); (0, 0)].
+Example not_excluded_middle :
+  counterexample (#0 `∨` (#0 ⟹ ⊥)) = Some [(0, 1)].
 Proof. done. Qed.
 
 Lemma eval_case_spec f case :
-  eval_case f case = true <-> realizes (case_context case 0) ⊤ f.
+  eval_case f case = true <-> realizes (Finite ∘ case_context case) ⊤ f.
 Proof.
 unfold eval_case, realizes;
 rewrite Sω_le_leb; done.
@@ -477,7 +475,7 @@ Admitted.
 
 Lemma eval_case_complete f d_max case :
   MD f <= d_max -> case_range (FV f) case ->
-  eval_case f case = true -> case_form d_max case ⊢ f.
+  eval_case f case = true -> case_form d_max ⊥ case ⊢ f.
 Proof.
 (*
 The case must have a sufficient variable range and modal depth. Then the case
@@ -486,7 +484,7 @@ hypothesis includes all the inequalities needed to reduce the formula f.
 Admitted.
 
 Lemma list_cases_complete fv md :
-  ⊢ ⋁ (case_form md <$> list_cases fv md).
+  ⊢ ⋁ (case_form md ⊥ <$> list_cases fv md).
 Proof.
 (*
 First we split into all possible permutations, then for each permutation we

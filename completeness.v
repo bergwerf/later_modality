@@ -101,6 +101,8 @@ Ltac conj_l := apply d_conj_elim_l.
 Ltac conj_r := apply d_conj_elim_r.
 Ltac disj_l := ecut; [|apply d_disj_intro_l].
 Ltac disj_r := ecut; [|apply d_disj_intro_r].
+Ltac impl_i := apply d_impl_intro.
+Ltac impl_e := eapply d_impl_elim.
 
 Global Instance d_pre_order :
   PreOrder deduction.
@@ -122,11 +124,11 @@ Ltac clr := apply d_clr.
 Ltac clr_l := apply d_clr_l.
 Ltac clr_r := apply d_clr_r.
 
-Lemma d_revert c p q : c ⊢ p ⟹ q -> c `∧` p ⊢ q.
-Proof. intros; eapply d_impl_elim; [clr_r; done|conj_r]. Qed.
+Lemma d_impl_revert c p q : c ⊢ p ⟹ q -> c `∧` p ⊢ q.
+Proof. intros; impl_e; [clr_r; done|conj_r]. Qed.
 
-Lemma d_revert_top p q : ⊢ p ⟹ q -> p ⊢ q.
-Proof. intros; eapply d_impl_elim; [clr; done|refl]. Qed.
+Lemma d_impl_revert_top p q : ⊢ p ⟹ q -> p ⊢ q.
+Proof. intros; impl_e; [clr; done|refl]. Qed.
 
 Section Deductions.
 
@@ -148,14 +150,13 @@ Qed.
 Lemma d_strong_fixp p :
   ▷p ⟹ p ⊢ p.
 Proof.
-eapply d_impl_elim; [clr|refl].
+impl_e; [clr|refl].
 eapply d_later_fixp.
-eapply d_impl_intro.
-eapply d_impl_elim; [conj_r|].
-ecut. apply d_conj_comm. apply d_revert.
-ecut. apply d_later_intro. apply d_impl_intro.
+impl_i; impl_e; [conj_r|].
+ecut. apply d_conj_comm. apply d_impl_revert.
+ecut. apply d_later_intro. impl_i.
 ecut. apply d_later_conj. apply d_later_mono.
-eapply d_impl_elim; [conj_r|conj_l].
+impl_e; [conj_r|conj_l].
 Qed.
 
 Lemma d_later_impl p q :
@@ -164,22 +165,20 @@ Proof.
 eapply d_disj_elim.
 clr; apply d_compare with (p:=p)(q:=q).
 - ecut. conj_r. apply d_later_intro.
-- cut (▷q).
-  eapply d_impl_elim. clr_r; done.
+- cut (▷q). impl_e. clr_r; done.
   ecut; [|apply d_later_intro].
   ecut; [|apply d_strong_fixp].
-  apply d_impl_intro.
-  eapply d_impl_elim. clr_r; clr_l; done.
-  eapply d_impl_elim. clr_r; clr_r; done. clr_l; done.
-  apply d_later_mono, d_impl_intro; clr_r; done.
+  impl_i; impl_e. clr_r; clr_l; done.
+  impl_e. clr_r; clr_r; done. clr_l; done.
+  apply d_later_mono; impl_i; clr_r; done.
 Qed.
 
 Lemma d_later_inj p q :
   ▷p ⊢ ▷q -> p ⊢ q.
 Proof.
-intros; eapply d_impl_elim; [clr|refl].
+intros; impl_e; [clr|refl].
 apply d_later_elim. ecut; [|apply d_later_impl].
-apply d_impl_intro; clr_l; done.
+impl_i; clr_l; done.
 Qed.
 
 Lemma d_compare_weak p q :
@@ -188,8 +187,7 @@ Proof.
 eapply d_disj_elim.
 clr; apply d_compare with (p:=p)(q:=q).
 clr_l; disj_l; done. clr_l; disj_r.
-eapply d_impl_intro, d_impl_elim.
-clr_r; done. clr_l; constructor.
+impl_i; impl_e. clr_r; done. clr_l; constructor.
 Qed.
 
 Lemma d_big_disj_intro p q qs :
@@ -341,25 +339,61 @@ Fixpoint perm_clauses xs :=
 
 Definition perm_form xs := ⋀ perm_clauses xs.
 
+Lemma perm_form_unfold x y zs :
+  perm_form (x :: y :: zs) = #x ⟹ #y `∧` perm_form (y :: zs).
+Proof.
+done.
+Qed.
+
+Lemma d_perm_form_tl x ys :
+  perm_form (x :: ys) ⊢ perm_form ys.
+Proof.
+destruct ys. unfold perm_form; simpl; done.
+rewrite perm_form_unfold; clr_l; done.
+Qed.
+
 Lemma d_interleave x xs :
   perm_form xs ⊢ ⋁ (perm_form <$> interleave x xs).
 Proof.
-induction xs as [|y xs].
+induction xs as [|y zs].
 unfold perm_form; simpl. disj_l; constructor.
 simpl interleave; rewrite fmap_cons; simpl.
-eapply d_disj_elim; [|disj_l|disj_r].
+eapply d_disj_elim; [|disj_l; clear IHzs|disj_r].
 clr; apply d_compare_weak with (p:=#x)(q:=#y).
-Admitted.
+rewrite perm_form_unfold; apply d_conj_comm.
+(* interleave x into the tail. *)
+apply d_impl_revert. ecut. apply d_conj_intro.
+apply d_perm_form_tl. done. apply d_impl_revert.
+ecut. apply IHzs. apply d_big_disj_elim; intros; impl_i; impl_i.
+apply elem_of_list_fmap in H as (zs' & -> & H).
+apply d_big_disj_intro with (q:=perm_form (y :: zs')).
+apply elem_of_list_fmap; eexists; split; [done|].
+apply elem_of_list_fmap; exists zs'; done.
+(* y comes before zs' ∈ interleave x zs. *)
+destruct zs as [|z zs]; simpl in *.
+- apply elem_of_list_singleton in H; subst.
+  unfold perm_form; simpl. apply d_conj_intro.
+  clr_l; done. clr; done.
+- inv H; clear H; rewrite ?perm_form_unfold.
+  + repeat apply d_conj_intro. clr_l; done.
+    clr_r; clr_r; clr_r; done. clr_r; clr_r; clr_l; done.
+  + apply elem_of_list_fmap in H2 as (zs'' & -> & H).
+    rewrite perm_form_unfold; apply d_conj_intro.
+    clr_r; clr_l; clr_r; done. clr_r; clr_r; done.
+Qed.
 
 Lemma subseteq_fmap {X Y} (f : X -> Y) (l l' : list X) :
   l ⊆ l' -> f <$> l ⊆ f <$> l'.
 Proof.
-Admitted.
+intros H y Hy. apply elem_of_list_fmap in Hy as (x & -> & Hx).
+apply elem_of_list_fmap; exists x; auto.
+Qed.
 
 Lemma subseteq_mbind {X Y} (f : X -> list Y) x (xs : list X) :
   x ∈ xs -> f x ⊆ xs ≫= f.
 Proof.
-Admitted.
+intros H y Hy; apply elem_of_list_bind; exists x; done.
+Qed.
 
 Lemma d_bind_interleave x xss :
   ⋁ (perm_form <$> xss) ⊢ ⋁ (perm_form <$> xss ≫= interleave x).
@@ -478,7 +512,7 @@ End Counterexample_search.
 Theorem deduction_complete p q :
   (∀ Γ, realizes Γ p q) -> p ⊢ q.
 Proof.
-intros; apply d_revert_top.
+intros; apply d_impl_revert_top.
 apply counterexample_complete.
 destruct (counterexample _) eqn:E; [exfalso|done].
 apply counterexample_sound in E as [Γ HΓ]; apply HΓ.

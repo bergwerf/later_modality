@@ -7,8 +7,7 @@ Require Import Nat.
 From stdpp Require Import list.
 
 Inductive term :=
-  | t_False
-  | t_True
+  | t_Const (b : bool)
   | t_Prop (i : nat).
 
 Inductive connective := Conj | Disj | Impl.
@@ -48,8 +47,8 @@ Global Instance fmap_form : FMap form :=
 Definition f_later {X} n (f : form X) := Nat.iter n f_Later f.
 Definition f_big {X} c (f0 : form X) fs := foldr (f_Conn c) f0 fs.
 
-Notation "⊥" := (f_Term t_False).
-Notation "⊤" := (f_Term t_True).
+Notation "⊥" := (f_Term (t_Const false)).
+Notation "⊤" := (f_Term (t_Const true)).
 Notation "# i" := (f_Term (t_Prop i)) (at level 40, format "# i").
 Notation "▷ p" := (f_Later p) (at level 49, right associativity, format "▷ p").
 Notation "p `∧` q" := (f_Conn Conj p q) (at level 56, left associativity).
@@ -217,6 +216,21 @@ apply d_big_disj_intro with (q:=p).
 auto. done.
 Qed.
 
+Lemma d_iff_refl p :
+  ⊢ p ⟺ p.
+Proof.
+apply d_conj_intro; impl_i; clr_l; done.
+Qed.
+
+Lemma d_iff_later c p q :
+  c ⊢ p ⟺ q -> c ⊢ ▷p ⟺ ▷q.
+Proof.
+intros; apply d_conj_intro.
+all: ecut; [apply d_later_intro|impl_i].
+all: ecut; [apply d_later_conj|apply d_later_mono].
+all: apply d_impl_revert; ecut; [apply H|constructor].
+Qed.
+
 Lemma d_impl_iff_r p q :
   ▷q ⟹ p ⊢ (p ⟹ q) ⟺ q.
 Proof.
@@ -271,8 +285,8 @@ Definition Sω_le (p0 p1 : Sω) :=
 
 Definition interp (Γ : nat -> Sω) (x : term) :=
   match x with
-  | t_False => Finite 0
-  | t_True => Infinite
+  | t_Const false => Finite 0
+  | t_Const true => Infinite
   | t_Prop i => Γ i
   end.
 
@@ -338,21 +352,58 @@ End Reference_model.
 
 Section Reductions.
 
-Definition atom fv md a :=
-  a = ⊤ \/ a = ⊥ \/ ∃ i d, i < fv /\ d <= md /\ a = f_later d (#i).
+Definition atom_term fv t :=
+  match t with
+  | t_Const _ => True
+  | t_Prop i => i < fv
+  end.
 
-Variable f : form term.
+Definition atom fv md a :=
+  ∃ t d, atom_term fv t /\ d <= md /\ a = f_later d (f_Term t).
+
+Lemma atom_const fv md b :
+  atom fv md (f_Term (t_Const b)).
+Proof.
+exists (t_Const b), 0; repeat split; lia.
+Qed.
+
+Lemma atom_later fv md a :
+  atom fv md a -> atom fv (S md) (▷a).
+Proof.
+Admitted.
+
+Lemma atom_weaken fv md fv' md' a :
+  atom fv md a -> fv ≤ fv' -> md ≤ md' -> atom fv' md' a.
+Proof.
+Admitted.
+
 Variable c : form term.
+Variable fv md : nat.
 
 Hypothesis determined : ∀ a b,
-  atom (FV f) (S (MD f)) a ->
-  atom (FV f) (S (MD f)) b ->
+  atom fv (S md) a ->
+  atom fv (S md) b ->
   c ⊢ a ⟹ b \/ c ⊢ b ⟹ a.
 
-Lemma d_reduce_to_atom :
+Lemma d_reduce_to_atom f :
+  FV f <= fv -> MD f <= md ->
   ∃ a, atom (FV f) (MD f) a /\ c ⊢ f ⟺ a.
 Proof.
-induction f as [[]|p|[] p IHp q IHq]; simpl; intros.
+induction f as [[]|p|[] p IHp q IHq]; simpl; intros Hfv Hmd.
+3-6: destruct IHp as (a & Aa & Ha); try lia.
+4-6: destruct IHq as (b & Ab & Hb); try lia.
+4-5: destruct (determined a b).
+12: destruct (determined a (▷b)). 13: apply atom_later.
+4,5,8,9,12,13: eapply atom_weaken; [eassumption|lia|lia].
+1: exists (f_Term (t_Const b)).
+2: exists (#i). 3: exists (▷a).
+4: exists a. 5: exists b.
+6: exists b. 7: exists a.
+8: exists ⊤. 9: exists b.
+1,2: split; [|clr; apply d_iff_refl].
+apply atom_const. exists (t_Prop i), 0; simpl; split; [lia|done].
+split; [apply atom_later, Aa|apply d_iff_later, Ha]. all: split.
+1,3,5,7,11: eapply atom_weaken; [eassumption|lia|lia]. 5: apply atom_const.
 Admitted.
 
 End Reductions.
@@ -518,8 +569,9 @@ Lemma case_form_reduce f  case :
   ∃ a, atom (FV f) (MD f) a /\
   case_form (MD f) ⊥ case ⊢ f ⟺ a.
 Proof.
-intros; apply d_reduce_to_atom.
+intros; eapply d_reduce_to_atom.
 intros; apply case_form_determined; done.
+all: done.
 Qed.
 
 Lemma eval_case_complete f case :

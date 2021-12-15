@@ -129,6 +129,10 @@ Proof. intros; impl_e; [clr_r; done|conj_r]. Qed.
 Lemma d_impl_revert_top p q : ⊢ p ⟹ q -> p ⊢ q.
 Proof. intros; impl_e; [clr; done|refl]. Qed.
 
+(*
+We now have formulas, deductions, and some tactics to work with them. We list
+all basic deductions that are needed later in the proof.
+*)
 Section Deductions.
 
 Lemma d_conj_comm p q :
@@ -243,6 +247,11 @@ Qed.
 
 End Deductions.
 
+(*
+But what does it mean for a formula to hold? We define this using a reference
+model that is classically equivalent to the more intuitive model of infinite
+sequences. We show that this model realizes every deduction.
+*)
 Section Reference_model.
 
 Inductive Sω :=
@@ -350,7 +359,12 @@ Qed.
 
 End Reference_model.
 
-Section Reductions.
+(*
+We can evaluate formulas semantically, if we are given a context with enough
+information about the proposition variables. We will need this later on to prove
+completeness.
+*)
+Section Semantic_evaluation.
 
 Definition atom_term fv t :=
   match t with
@@ -406,8 +420,12 @@ split; [apply atom_later, Aa|apply d_iff_later, Ha]. all: split.
 1,3,5,7,11: eapply atom_weaken; [eassumption|lia|lia]. 5: apply atom_const.
 Admitted.
 
-End Reductions.
+End Semantic_evaluation.
 
+(*
+The next result we need is about permutations of proposition variables. We show
+that we can obtain a disjunction of all possible orderings.
+*)
 Section Permutation_deduction.
 
 Implicit Types xs : list nat.
@@ -495,6 +513,11 @@ Qed.
 
 End Permutation_deduction.
 
+(*
+Now we implement a decision procedure that looks for counterexamples. If no
+counterexample is found the formula is true, and it is possible to give a
+deduction.
+*)
 Section Counterexample_search.
 
 Fixpoint case_form (md : nat) (pred : form term) (case : list (nat * nat)) :=
@@ -602,6 +625,10 @@ Qed.
 
 End Counterexample_search.
 
+(*
+The final result: if q always follows from p in the reference model, then there
+exists a deduction of the type p ⊢ q.
+*)
 Theorem deduction_complete p q :
   (∀ Γ, realizes Γ p q) -> p ⊢ q.
 Proof.

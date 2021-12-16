@@ -103,7 +103,6 @@ Ltac d_intro := apply d_impl_intro.
 Ltac d_mp := eapply d_impl_elim.
 Ltac d_apply_l H := ecut; [eapply H|].
 Ltac d_apply_r H := ecut; [|eapply H].
-Ltac d_now := d_apply_r d_later_intro.
 Ltac d_left := d_apply_r d_disj_intro_l.
 Ltac d_right := d_apply_r d_disj_intro_r.
 
@@ -166,8 +165,8 @@ Lemma d_later_impl p q :
 Proof.
 eapply d_disj_elim.
 clr; apply d_compare with (p:=p)(q:=q).
-d_now; d_hyp. cut (▷q). d_mp. d_hyp.
-d_now; d_apply_r d_strong_fixp.
+d_apply_r d_later_intro; d_hyp. cut (▷q). d_mp. d_hyp.
+d_apply_r d_later_intro; d_apply_r d_strong_fixp.
 d_intro; d_mp; [d_hyp|]; d_mp; d_hyp.
 apply d_later_mono; d_intro; d_hyp.
 Qed.
@@ -185,7 +184,7 @@ Proof.
 eapply d_disj_elim.
 clr; apply d_compare with (p:=p)(q:=q).
 d_left; d_hyp. d_right; d_intro; d_mp.
-d_hyp. d_now; d_hyp.
+d_hyp. d_apply_r d_later_intro; d_hyp.
 Qed.
 
 Lemma d_big_disj_intro p q qs :
@@ -228,14 +227,6 @@ intros; d_split.
 all: d_apply_l d_later_intro; d_intro.
 all: d_apply_l d_later_conj; apply d_later_mono.
 all: d_revert; d_apply_l H; constructor.
-Qed.
-
-Lemma d_impl_iff_r p q :
-  ▷q ⟹ p ⊢ (p ⟹ q) ⟺ q.
-Proof.
-d_split; repeat d_intro.
-d_apply_r d_strong_fixp; d_intro.
-d_mp. d_hyp. d_mp; d_hyp. d_hyp.
 Qed.
 
 End Deductions.
@@ -392,19 +383,32 @@ Variable c : form term.
 Variable fv md : nat.
 
 Hypothesis exhaustive : ∀ a b,
-  atom fv (S md) a ->
-  atom fv (S md) b ->
-  c ⊢ a ⟹ b \/ c ⊢ b ⟹ a.
+  atom fv md a -> atom fv md b ->
+  c ⊢ a ⟹ b \/ c ⊢ ▷b ⟹ a.
 
-Lemma d_reduce_to_atom f :
+Ltac d_apply_r_lift_iff H :=
+  (d_apply_r d_conj_elim_l; d_apply_r H) ||
+  (d_apply_r d_conj_elim_r; d_apply_r H).
+
+Ltac d_subst_r H := d_mp; [(d_apply_r H || d_apply_r_lift_iff H); d_hyp|].
+
+Local Lemma exhaustive_weak a b :
+  atom fv md a -> atom fv md b ->
+  c ⊢ a ⟹ b \/ c ⊢ b ⟹ a.
+Proof.
+intros; destruct (exhaustive a b); try done. left; done.
+right; d_intro; d_subst_r H1; d_apply_r d_later_intro; d_hyp.
+Qed.
+
+Theorem d_reduce_to_atom f :
   FV f <= fv -> MD f <= md ->
   ∃ a, atom (FV f) (MD f) a /\ c ⊢ f ⟺ a.
 Proof.
 induction f as [[]|p|[] p IHp q IHq]; simpl; intros Hfv Hmd.
 3-6: destruct IHp as (a & Aa & Ha); try lia.
 4-6: destruct IHq as (b & Ab & Hb); try lia.
-4-5: destruct (exhaustive a b).
-12: destruct (exhaustive a (▷b)). 13: apply atom_later.
+4-5: destruct (exhaustive_weak a b).
+12: destruct (exhaustive a b).
 4,5,8,9,12,13: eapply atom_weaken; [eassumption|lia|lia].
 1: exists (f_Term (t_Const b)).
 2: exists (#i). 3: exists (▷a).
@@ -415,8 +419,17 @@ induction f as [[]|p|[] p IHp q IHq]; simpl; intros Hfv Hmd.
 apply atom_const. exists (t_Prop i), 0; simpl; split; [lia|done].
 split; [apply atom_later, Aa|apply d_iff_later, Ha]. all: split.
 1,3,5,7,11: eapply atom_weaken; [eassumption|lia|lia]. 5: apply atom_const.
-(* We need some new tactics to work with deductions. *)
-Admitted.
+all: d_split; d_intro.
+2,4: d_split; [d_subst_r Ha|d_subst_r Hb]; try d_hyp; d_subst_r H; d_hyp.
+d_subst_r Ha; d_hyp. d_subst_r Hb; d_hyp.
+1,3: eapply d_disj_elim; [d_hyp|idtac|idtac].
+d_subst_r H; d_subst_r Ha; d_hyp. d_subst_r Hb; d_hyp.
+d_subst_r Ha; d_hyp. d_subst_r H; d_subst_r Hb; d_hyp. 
+d_right; d_subst_r Hb; d_hyp. d_left; d_subst_r Ha; d_hyp.
+constructor. d_intro; d_subst_r Hb; d_subst_r H; d_subst_r Ha; d_hyp.
+d_apply_r d_strong_fixp; d_intro; d_subst_r Hb; d_mp; [d_hyp|].
+d_subst_r Ha; d_subst_r H; d_hyp. d_intro; d_subst_r Hb; d_hyp.
+Qed.
 
 End Semantic_evaluation.
 
@@ -499,7 +512,7 @@ d_apply_r d_big_disj_subseteq. apply d_interleave with (x:=x).
 apply subseteq_fmap, subseteq_mbind, H.
 Qed.
 
-Lemma d_permutations xs :
+Theorem d_permutations xs :
   ⊢ ⋁ (perm_form <$> permutations xs).
 Proof.
 induction xs as [|x xs]; simpl. d_left; constructor.
@@ -574,17 +587,9 @@ eapply elem_of_list_bind in H as (xs & H1 & H2).
 Admitted.
 
 Lemma case_form_exhaustive fv md case a b :
-  case_range fv case ->
-  atom fv (S md) a ->
-  atom fv (S md) b ->
-  case_form md ⊥ case ⊢ a ⟹ b \/
-  case_form md ⊥ case ⊢ b ⟹ a.
+  case_range fv case -> atom fv md a -> atom fv md b ->
+  case_form md ⊥ case ⊢ a ⟹ b \/ case_form md ⊥ case ⊢ ▷b ⟹ a.
 Proof.
-intros.
-pose (ai := eval (interp (Finite ∘ case_context case) <$> a)).
-pose (bi := eval (interp (Finite ∘ case_context case) <$> b)).
-destruct (Sω_leb ai bi) eqn:E; [left|right].
-(* Can we relate Sω_leb judgements to the case formula? *)
 Admitted.
 
 Lemma case_form_reduce f  case :
@@ -603,7 +608,7 @@ Lemma eval_case_complete f case :
   case_form (MD f) ⊥ case ⊢ f.
 Proof.
 intros Hfv Heval; apply case_form_reduce in Hfv as (a & H1 & H2).
-d_apply_l H2.
+(* We must have a = ⊤. *)
 Admitted.
 
 Lemma d_list_cases fv md :

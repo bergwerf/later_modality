@@ -21,6 +21,9 @@ Arguments f_Term {_}.
 Arguments f_Later {_}.
 Arguments f_Conn {_}.
 
+Definition f_later {X} n (f : form X) := Nat.iter n f_Later f.
+Definition f_big {X} c (d : form X) fs := foldr (f_Conn c) d fs.
+
 Fixpoint FV (f : form term) :=
   match f with
   | f_Term (t_Prop i) => S i
@@ -44,11 +47,9 @@ Global Instance fmap_form : FMap form :=
     | f_Conn c p q => f_Conn c (rec p) (rec q)
     end.
 
-Definition f_later {X} n (f : form X) := Nat.iter n f_Later f.
-Definition f_big {X} c (f0 : form X) fs := foldr (f_Conn c) f0 fs.
+Global Instance form_top : Top (form term) := f_Term (t_Const true).
+Global Instance form_bot : Bottom (form term) := f_Term (t_Const false).
 
-Notation "⊥" := (f_Term (t_Const false)).
-Notation "⊤" := (f_Term (t_Const true)).
 Notation "# i" := (f_Term (t_Prop i)) (at level 40, format "# i").
 Notation "▷ p" := (f_Later p) (at level 49, right associativity, format "▷ p").
 Notation "p `∧` q" := (f_Conn Conj p q) (at level 56, left associativity).
@@ -91,17 +92,20 @@ Inductive deduction : form term -> form term -> Prop :=
   | d_later_conj p q     : ▷p `∧` ▷q ⊢ ▷(p `∧` q)
   | d_compare p q        : ⊢ p ⟹ q `∨` ▷q ⟹ p
 where "p ⊢ q" := (deduction p q) and "⊢ q" := (⊤ ⊢ q).
+Notation "p ⊣⊢ q" := (p ⊢ q /\ q ⊢ p) (at level 71).
 
 Ltac inv H := inversion H; subst.
 Ltac cut x := transitivity x.
 Ltac ecut := etransitivity.
 Ltac refl := reflexivity.
-Ltac conj_l := apply d_conj_elim_l.
-Ltac conj_r := apply d_conj_elim_r.
-Ltac disj_l := ecut; [|apply d_disj_intro_l].
-Ltac disj_r := ecut; [|apply d_disj_intro_r].
-Ltac impl_i := apply d_impl_intro.
-Ltac impl_e := eapply d_impl_elim.
+Ltac d_split := apply d_conj_intro.
+Ltac d_intro := apply d_impl_intro.
+Ltac d_mp := eapply d_impl_elim.
+Ltac d_apply_l H := ecut; [eapply H|].
+Ltac d_apply_r H := ecut; [|eapply H].
+Ltac d_now := d_apply_r d_later_intro.
+Ltac d_left := d_apply_r d_disj_intro_l.
+Ltac d_right := d_apply_r d_disj_intro_r.
 
 Global Instance d_pre_order :
   PreOrder deduction.
@@ -111,55 +115,50 @@ intros p q r; apply d_trans.
 Defined.
 
 Lemma d_clr p q : ⊢ q -> p ⊢ q.
-Proof. ecut. apply d_true_intro. done. Qed.
+Proof. d_apply_l d_true_intro; done. Qed.
 
 Lemma d_clr_l c p q : c ⊢ q -> p `∧` c ⊢ q.
-Proof. ecut. conj_r. done. Qed.
+Proof. d_apply_l d_conj_elim_r; done. Qed.
 
 Lemma d_clr_r c p q : c ⊢ q -> c `∧` p ⊢ q.
-Proof. ecut. conj_l. done. Qed.
+Proof. d_apply_l d_conj_elim_l; done. Qed.
 
 Ltac clr := apply d_clr.
 Ltac clr_l := apply d_clr_l.
 Ltac clr_r := apply d_clr_r.
+Ltac d_hyp := refl || (clr_l; d_hyp) || (clr_r; d_hyp).
+
+Lemma d_conj_comm p q : p `∧` q ⊢ q `∧` p.
+Proof. d_split; d_hyp. Qed.
+
+Lemma d_conj_assoc p q r : (p `∧` q) `∧` r ⊢ p `∧` (q `∧` r).
+Proof. repeat d_split; d_hyp. Qed.
 
 Lemma d_impl_revert c p q : c ⊢ p ⟹ q -> c `∧` p ⊢ q.
-Proof. intros; impl_e; [clr_r; done|conj_r]. Qed.
+Proof. intros; d_mp; [clr_r; done|clr_l; done]. Qed.
 
 Lemma d_impl_revert_top p q : ⊢ p ⟹ q -> p ⊢ q.
-Proof. intros; impl_e; [clr; done|refl]. Qed.
+Proof. intros; d_mp; [clr; done|refl]. Qed.
+
+Ltac d_comm := d_apply_l d_conj_comm.
+Ltac d_assoc := d_apply_l d_conj_assoc.
+Ltac d_revert := apply d_impl_revert || apply d_impl_revert_top.
 
 (*
-We now have formulas, deductions, and some tactics to work with them. We list
-all basic deductions that are needed later in the proof.
+We list all basic deductions that are needed later in the proof.
 *)
 Section Deductions.
-
-Lemma d_conj_comm p q :
-  p `∧` q ⊢ q `∧` p.
-Proof.
-eapply d_conj_intro; [conj_r|conj_l].
-Qed.
-
-Lemma d_conj_assoc p q r :
-  (p `∧` q) `∧` r ⊢ p `∧` (q `∧` r).
-Proof.
-repeat apply d_conj_intro.
-clr_r; clr_r; done.
-clr_r; clr_l; done.
-clr_l; done.
-Qed.
 
 Lemma d_strong_fixp p :
   ▷p ⟹ p ⊢ p.
 Proof.
-impl_e; [clr|refl].
+d_mp; [clr|refl].
 eapply d_later_fixp.
-impl_i; impl_e; [conj_r|].
-ecut. apply d_conj_comm. apply d_impl_revert.
-ecut. apply d_later_intro. impl_i.
-ecut. apply d_later_conj. apply d_later_mono.
-impl_e; [conj_r|conj_l].
+d_intro; d_mp; [d_hyp|].
+d_comm; d_revert.
+d_apply_l d_later_intro.
+d_intro; d_apply_l d_later_conj.
+apply d_later_mono; d_mp; d_hyp.
 Qed.
 
 Lemma d_later_impl p q :
@@ -167,21 +166,17 @@ Lemma d_later_impl p q :
 Proof.
 eapply d_disj_elim.
 clr; apply d_compare with (p:=p)(q:=q).
-- ecut. conj_r. apply d_later_intro.
-- cut (▷q). impl_e. clr_r; done.
-  ecut; [|apply d_later_intro].
-  ecut; [|apply d_strong_fixp].
-  impl_i; impl_e. clr_r; clr_l; done.
-  impl_e. clr_r; clr_r; done. clr_l; done.
-  apply d_later_mono; impl_i; clr_r; done.
+d_now; d_hyp. cut (▷q). d_mp. d_hyp.
+d_now; d_apply_r d_strong_fixp.
+d_intro; d_mp; [d_hyp|]; d_mp; d_hyp.
+apply d_later_mono; d_intro; d_hyp.
 Qed.
 
 Lemma d_later_inj p q :
   ▷p ⊢ ▷q -> p ⊢ q.
 Proof.
-intros; impl_e; [clr|refl].
-apply d_later_elim. ecut; [|apply d_later_impl].
-impl_i; clr_l; done.
+intros; d_mp; [clr|refl]. apply d_later_elim.
+d_apply_r d_later_impl. d_intro; clr_l; done.
 Qed.
 
 Lemma d_compare_weak p q :
@@ -189,8 +184,8 @@ Lemma d_compare_weak p q :
 Proof.
 eapply d_disj_elim.
 clr; apply d_compare with (p:=p)(q:=q).
-clr_l; disj_l; done. clr_l; disj_r.
-impl_i; impl_e. clr_r; done. clr_l; constructor.
+d_left; d_hyp. d_right; d_intro; d_mp.
+d_hyp. d_now; d_hyp.
 Qed.
 
 Lemma d_big_disj_intro p q qs :
@@ -198,7 +193,7 @@ Lemma d_big_disj_intro p q qs :
 Proof.
 induction qs; simpl; intros.
 apply not_elem_of_nil in H; done.
-inv H; [disj_l|disj_r]. done.
+inv H; [d_left|d_right]. done.
 apply IHqs; done.
 Qed.
 
@@ -223,26 +218,24 @@ Qed.
 Lemma d_iff_refl p :
   ⊢ p ⟺ p.
 Proof.
-apply d_conj_intro; impl_i; clr_l; done.
+d_split; d_intro; d_hyp.
 Qed.
 
 Lemma d_iff_later c p q :
   c ⊢ p ⟺ q -> c ⊢ ▷p ⟺ ▷q.
 Proof.
-intros; apply d_conj_intro.
-all: ecut; [apply d_later_intro|impl_i].
-all: ecut; [apply d_later_conj|apply d_later_mono].
-all: apply d_impl_revert; ecut; [apply H|constructor].
+intros; d_split.
+all: d_apply_l d_later_intro; d_intro.
+all: d_apply_l d_later_conj; apply d_later_mono.
+all: d_revert; d_apply_l H; constructor.
 Qed.
 
 Lemma d_impl_iff_r p q :
   ▷q ⟹ p ⊢ (p ⟹ q) ⟺ q.
 Proof.
-apply d_conj_intro.
-- impl_i; ecut; [|apply d_strong_fixp].
-  impl_i; impl_e. clr_r; clr_l; done.
-  impl_e. clr_r; clr_r; done. clr_l; done.
-- impl_i; impl_i; clr_r; clr_l; done.
+d_split; repeat d_intro.
+d_apply_r d_strong_fixp; d_intro.
+d_mp. d_hyp. d_mp; d_hyp. d_hyp.
 Qed.
 
 End Deductions.
@@ -366,14 +359,14 @@ completeness.
 *)
 Section Semantic_evaluation.
 
-Definition atom_term fv t :=
-  match t with
+Definition atom_term fv x :=
+  match x with
   | t_Const _ => True
   | t_Prop i => i < fv
   end.
 
 Definition atom fv md a :=
-  ∃ t d, atom_term fv t /\ d <= md /\ a = f_later d (f_Term t).
+  ∃ x d, atom_term fv x /\ d <= md /\ a = f_later d (f_Term x).
 
 Lemma atom_const fv md b :
   atom fv md (f_Term (t_Const b)).
@@ -384,15 +377,15 @@ Qed.
 Lemma atom_later fv md a :
   atom fv md a -> atom fv (S md) (▷a).
 Proof.
-intros (t & d & H1 & H2 & ->); exists t, (S d);
+intros (x & d & H1 & H2 & ->); exists x, (S d);
 simpl; repeat split. done. lia.
 Qed.
 
 Lemma atom_weaken fv md fv' md' a :
   atom fv md a -> fv ≤ fv' -> md ≤ md' -> atom fv' md' a.
 Proof.
-intros (t & d & H1 & H2 & ->); exists t, d; repeat split.
-destruct t; simpl in *; [done|lia]. lia.
+intros (x & d & H1 & H2 & ->); exists x, d; repeat split.
+destruct x; simpl in *; [done|lia]. lia.
 Qed.
 
 Variable c : form term.
@@ -461,15 +454,15 @@ Lemma d_interleave x xs :
   perm_form xs ⊢ ⋁ (perm_form <$> interleave x xs).
 Proof.
 induction xs as [|y zs].
-unfold perm_form; simpl. disj_l; constructor.
+unfold perm_form; simpl. d_left; constructor.
 simpl interleave; rewrite fmap_cons; simpl.
-eapply d_disj_elim; [|disj_l; clear IHzs|disj_r].
+eapply d_disj_elim; [|d_left; clear IHzs|d_right].
 clr; apply d_compare_weak with (p:=#x)(q:=#y).
 rewrite perm_form_unfold; apply d_conj_comm.
 (* interleave x into the tail. *)
-apply d_impl_revert. ecut. apply d_conj_intro.
-apply d_perm_form_tl. done. apply d_impl_revert.
-ecut. apply IHzs. apply d_big_disj_elim; intros; impl_i; impl_i.
+d_revert; d_apply_l d_conj_intro.
+apply d_perm_form_tl. done. d_revert.
+d_apply_l IHzs. apply d_big_disj_elim; intros; d_intro; d_intro.
 apply elem_of_list_fmap in H as (zs' & -> & H).
 apply d_big_disj_intro with (q:=perm_form (y :: zs')).
 apply elem_of_list_fmap; eexists; split; [done|].
@@ -477,14 +470,11 @@ apply elem_of_list_fmap; exists zs'; done.
 (* y comes before zs' ∈ interleave x zs. *)
 destruct zs as [|z zs]; simpl in *.
 - apply elem_of_list_singleton in H; subst.
-  unfold perm_form; simpl. apply d_conj_intro.
-  clr_l; done. clr; done.
+  unfold perm_form; simpl. d_split; d_hyp.
 - inv H; clear H; rewrite ?perm_form_unfold.
-  + repeat apply d_conj_intro. clr_l; done.
-    clr_r; clr_r; clr_r; done. clr_r; clr_r; clr_l; done.
-  + apply elem_of_list_fmap in H2 as (zs'' & -> & H).
-    rewrite perm_form_unfold; apply d_conj_intro.
-    clr_r; clr_l; clr_r; done. clr_r; clr_r; done.
+  repeat d_split; d_hyp.
+  apply elem_of_list_fmap in H2 as (zs'' & -> & H).
+  rewrite perm_form_unfold; d_split; d_hyp.
 Qed.
 
 Lemma subseteq_fmap {X Y} (f : X -> Y) (l l' : list X) :
@@ -505,15 +495,15 @@ Lemma d_bind_interleave x xss :
 Proof.
 apply d_big_disj_elim; intros.
 apply elem_of_list_fmap in H as (xs & -> & H).
-ecut; [apply d_interleave with (x:=x)|apply d_big_disj_subseteq].
+d_apply_r d_big_disj_subseteq. apply d_interleave with (x:=x).
 apply subseteq_fmap, subseteq_mbind, H.
 Qed.
 
 Lemma d_permutations xs :
   ⊢ ⋁ (perm_form <$> permutations xs).
 Proof.
-induction xs as [|x xs]; simpl. disj_l; constructor.
-ecut; [apply IHxs|apply d_bind_interleave].
+induction xs as [|x xs]; simpl. d_left; constructor.
+d_apply_l IHxs; apply d_bind_interleave.
 Qed.
 
 End Permutation_deduction.
@@ -613,7 +603,7 @@ Lemma eval_case_complete f case :
   case_form (MD f) ⊥ case ⊢ f.
 Proof.
 intros Hfv Heval; apply case_form_reduce in Hfv as (a & H1 & H2).
-ecut; [apply H2|].
+d_apply_l H2.
 Admitted.
 
 Lemma d_list_cases fv md :

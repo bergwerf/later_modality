@@ -1,0 +1,5 @@
+# Logic of delay
+-R . local
+
+completeness.v
+addendum.v

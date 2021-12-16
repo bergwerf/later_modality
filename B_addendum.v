@@ -3,7 +3,7 @@ Additional material
 ===================
 *)
 
-From local Require Import completeness.
+From local Require Import A_completeness.
 From stdpp Require Import list.
 
 (*

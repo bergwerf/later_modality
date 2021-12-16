@@ -229,6 +229,13 @@ all: d_apply_l d_later_conj; apply d_later_mono.
 all: d_revert; d_apply_l H; constructor.
 Qed.
 
+Lemma d_later_top d :
+  ⊢ f_later d ⊤.
+Proof.
+induction d; simpl. constructor.
+d_apply_r d_later_intro; done.
+Qed.
+
 End Deductions.
 
 (*
@@ -295,13 +302,20 @@ Fixpoint eval (f : form Sω) :=
   end.
 
 Definition realizes Γ p q :=
-  Sω_le (eval (interp Γ <$> p)) (eval (interp Γ <$> q)).
+  (Sω_le (eval (interp Γ <$> p)) (eval (interp Γ <$> q))).
 
-Instance Sω_le_pre_order :
+Global Instance Sω_le_pre_order :
   PreOrder Sω_le.
 Proof.
 split. intros []; simpl; done.
 intros [] [] []; simpl; try done; lia.
+Qed.
+
+Global Instance realizes_pre_order Γ :
+  PreOrder (realizes Γ).
+Proof.
+split; unfold realizes. intros p; done.
+intros p q r; intros; etrans; done.
 Qed.
 
 Lemma Sω_le_leb p q :
@@ -324,7 +338,13 @@ simpl; edestruct Sω_le_cases; apply Sω_le_leb in H; rewrite H; simpl.
 all: destruct (if Sω_leb _ _ then _ else _); done.
 Qed.
 
-Lemma realizes_impl p q Γ :
+Lemma realizes_conj_intro Γ c p q :
+  realizes Γ c p -> realizes Γ c q -> realizes Γ c (p `∧` q).
+Proof.
+unfold realizes; simpl; repeat destruct (eval _); simpl; try done; lia.
+Qed.
+
+Lemma realizes_impl_intro_top p q Γ :
   realizes Γ p q -> realizes Γ ⊤ (p ⟹ q).
 Proof.
 unfold realizes; simpl; repeat destruct (eval _); simpl; try done.
@@ -590,6 +610,15 @@ Lemma case_form_exhaustive fv md case a b :
   case_range fv case -> atom fv md a -> atom fv md b ->
   case_form md ⊥ case ⊢ a ⟹ b \/ case_form md ⊥ case ⊢ ▷b ⟹ a.
 Proof.
+intros Hrange (x & dx & Hx & Hdx & ->) (y & dy & Hy & Hdy & ->).
+replace (▷f_later dy _) with (f_later (S dy) (f_Term y)) by done.
+(*
+Idea: First handle the case that x or y is ⊤. Then create a list of allowed
+terms and use induction on `case`. Both the terms x and y are such allowed
+terms, and the case formula will eventually describe every term in this list.
+During the induction we will encounter x or y, and show that the decision can be
+made for any desired relative distance.
+*)
 Admitted.
 
 Lemma case_form_reduce f  case :
@@ -602,14 +631,44 @@ intros; eapply case_form_exhaustive.
 all: done.
 Qed.
 
+Lemma case_context_realizes_case_form md case :
+  realizes (Finite ∘ case_context case) ⊤ (case_form md ⊥ case).
+Proof.
+Admitted.
+
+Lemma fmap_later {X Y} (t : X -> Y) d (f : form X) :
+  t <$> f_later d f = f_later d (t <$> f).
+Proof.
+induction d; simpl. done.
+rewrite <-IHd; done.
+Qed.
+
+Lemma eval_later d f n :
+  eval f = Finite n -> eval (f_later d f) = Finite (d + n).
+Proof.
+induction d; simpl; intros.
+done. rewrite IHd; done.
+Qed.
+
+Lemma realizes_finite_atom Γ fv md a :
+  atom fv md a -> realizes (Finite ∘ Γ) ⊤ a -> ∃ d, a = f_later d ⊤.
+Proof.
+unfold realizes; intros ([[]|] & d & Hx & Hd & ->) H; simpl in *.
+exists d; done. all: exfalso; erewrite fmap_later, eval_later in H; done.
+Qed.
+
 Lemma eval_case_complete f case :
   case_range (FV f) case ->
   eval_case f case = true ->
   case_form (MD f) ⊥ case ⊢ f.
 Proof.
-intros Hfv Heval; apply case_form_reduce in Hfv as (a & H1 & H2).
-(* We must have a = ⊤. *)
-Admitted.
+intros Hfv Heval; apply case_form_reduce in Hfv as (a & Ha & Hf).
+eapply realizes_finite_atom in Ha as [d ->].
+d_apply_l Hf; d_mp. d_hyp. clr; apply d_later_top.
+etrans. apply realizes_conj_intro. apply case_context_realizes_case_form.
+apply eval_case_spec, Heval. apply deduction_sound.
+d_revert; d_apply_l Hf; d_hyp.
+Qed.
 
 Lemma d_list_cases fv md :
   ⊢ ⋁ (case_form md ⊥ <$> list_cases fv md).
@@ -641,5 +700,5 @@ intros; apply d_impl_revert_top.
 apply counterexample_complete.
 destruct (counterexample _) eqn:E; [exfalso|done].
 apply counterexample_sound in E as [Γ HΓ]; apply HΓ.
-apply realizes_impl, H.
+apply realizes_impl_intro_top, H.
 Qed.

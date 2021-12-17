@@ -548,13 +548,15 @@ deduction.
 *)
 Section Counterexample_search.
 
-Fixpoint case_form (md : nat) (pred : form term) (case : list (nat * nat)) :=
+Fixpoint case_clauses (md : nat) (pred : form term) (case : list (nat * nat)) :=
   match case with
-  | [] => ⊤
+  | [] => []
   | (i, d) :: case' => if d <? md
-    then (f_later d pred ⟺ #i) `∧` case_form md (#i) case'
-    else (f_later d pred ⟹ #i) `∧` case_form md (#i) case'
+    then (f_later d pred ⟺ #i) :: case_clauses md (#i) case'
+    else (f_later d pred ⟹ #i) :: case_clauses md (#i) case'
   end.
+
+Definition case_form md pred case := ⋀ case_clauses md pred case.
 
 Fixpoint case_context (case : list (nat * nat)) (i : nat) : nat :=
   match case with

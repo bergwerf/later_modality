@@ -364,11 +364,11 @@ Qed.
 End Reference_model.
 
 (*
-We can evaluate formulas semantically, if we are given a context with enough
+We can evaluate formulas symbolically, if we are given a context with enough
 information about the proposition variables. We will need this later on to prove
 completeness.
 *)
-Section Semantic_evaluation.
+Section Symbolic_evaluation.
 
 Definition atom_term fv x :=
   match x with
@@ -451,7 +451,7 @@ d_apply_r d_strong_fixp; d_intro; d_subst_r Hb; d_mp; [d_hyp|].
 d_subst_r Ha; d_subst_r H; d_hyp. d_intro; d_subst_r Hb; d_hyp.
 Qed.
 
-End Semantic_evaluation.
+End Symbolic_evaluation.
 
 (*
 The next result we need is about permutations of proposition variables. We show

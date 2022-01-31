@@ -60,13 +60,16 @@ Notation "⋀ fs" := (f_big Conj ⊤ fs) (at level 57).
 Notation "⋁ fs" := (f_big Disj ⊥ fs) (at level 57).
 
 (*
-Why use a binary sequent?
--------------------------
 The sequent could be replaced with an implication, e.g. we could write something
-like ⊢ p ⟹ q instead of p ⊢ q. But there are a few advantages of using a binary
-sequent relation: (1) Using tactics: a binary relation allows setoid rewriting
-and pre-order based tactics. (2) Readability: the sequent avoids parentheses in
-some cases, and creates a clear separation between hypothesis and goal.
+like ⊢ p ⟹ q instead of p ⊢ q. But there are some advantages of using a sequent
+relation: (1) Automation: this gives setoid rewriting and a pre-order instance.
+(2) Readability: the sequent avoids parentheses in some cases, and creates a
+clear separation between hypothesis and goal.
+
+This treatment of natural deduction is not completely rigorous. We do not use
+lists to store the context, but a single formula (this started as an experiment,
+but at this point going back requires too much work). We do not prove a
+deduction theorem, but include transitivity as an axiom.
 *)
 
 Reserved Notation "p ⊢ q" (at level 70).
@@ -187,6 +190,23 @@ d_left; d_hyp. d_right; d_intro; d_mp.
 d_hyp. d_apply_r d_later_intro; d_hyp.
 Qed.
 
+Lemma d_disj_elim_inline p q r :
+  p ⊢ r -> q ⊢ r -> p `∨` q ⊢ r.
+Proof.
+intros; eapply d_disj_elim. done.
+all: clr_l; done.
+Qed.
+
+Lemma d_big_conj_intro c ps :
+  (∀ p, p ∈ ps -> c ⊢ p) -> c ⊢ ⋀ ps.
+Proof.
+Admitted.
+
+Lemma d_big_conj_elim p ps :
+  p ∈ ps -> ⋀ ps ⊢ p.
+Proof.
+Admitted.
+
 Lemma d_big_disj_intro p q qs :
   q ∈ qs -> p ⊢ q -> p ⊢ ⋁ qs.
 Proof.
@@ -212,6 +232,22 @@ Proof.
 intros; apply d_big_disj_elim; intros.
 apply d_big_disj_intro with (q:=p).
 auto. done.
+Qed.
+
+Lemma d_big_disj_conj_swap {X} (f : X -> list (form term)) (xs : list X) :
+  ⋀ ((λ x, ⋁ f x) <$> xs) ⊢ ⋁ ((λ c, ⋀ c) <$> mapM f xs).
+Proof.
+induction xs. simpl; d_left; done.
+ecut. apply d_conj_intro.
+clr_r; done. clr_l; apply IHxs.
+d_revert; apply d_big_disj_elim; intros p Hp; d_intro.
+d_comm; d_revert; apply d_big_disj_elim; intros q Hq; d_intro.
+apply elem_of_list_fmap in Hq as (qs & -> & Hqs).
+eapply d_big_disj_intro; simpl.
+apply elem_of_list_fmap; eexists; split. done.
+apply elem_of_list_bind; exists p; split; [|done].
+apply elem_of_list_bind; exists qs; split; [|done].
+apply elem_of_list_ret; done. d_comm; done.
 Qed.
 
 Lemma d_iff_refl p :
@@ -459,16 +495,16 @@ that we can obtain a disjunction of all possible orderings.
 *)
 Section Permutation_deduction.
 
-Implicit Types xs : list nat.
-
-Fixpoint perm_clauses xs :=
+Fixpoint adj {X} (xs : list X) :=
   match xs with
   | [] => []
   | [_] => []
-  | x :: (y :: _) as xs' => (#x ⟹ #y) :: perm_clauses xs'
+  | x :: (y :: _) as xs' => (x, y) :: adj xs'
   end.
 
-Definition perm_form xs := ⋀ perm_clauses xs.
+Implicit Types xs : list nat.
+
+Definition perm_form xs := ⋀ ((λ p, #p.1 ⟹ #p.2) <$> adj xs).
 
 Lemma perm_form_unfold x y zs :
   perm_form (x :: y :: zs) = #x ⟹ #y `∧` perm_form (y :: zs).
@@ -541,6 +577,66 @@ Qed.
 
 End Permutation_deduction.
 
+Section Offset_deduction.
+
+Lemma in_seq_iff start n len :
+  n ∈ seq start len <-> start <= n < start + len.
+Proof.
+rewrite elem_of_list_In; apply in_seq.
+Qed.
+
+Lemma d_later_offsets c p q k :
+  c ⊢ p ⟹ q -> c ⊢ f_later k p ⟹ q `∨`
+    ⋁ ((λ n, f_later n p ⟺ q) <$> seq 0 k).
+Proof.
+intros; induction k. d_left; done.
+eapply d_disj_elim. apply IHk.
+eapply d_disj_elim. clr; apply (d_compare q (f_later k p)).
+- d_right. eapply d_big_disj_intro.
+  apply elem_of_list_fmap; exists k. split. done.
+  apply elem_of_list_In, in_seq; lia.
+  d_split; d_hyp.
+- d_left; d_hyp.
+- d_right; clr_l.
+  apply d_big_disj_subseteq.
+  apply subseteq_fmap; intros i.
+  rewrite ?in_seq_iff; lia.
+Qed.
+
+Definition offset_clause md (p q : form term) d :=
+  if d <? md then f_later d p ⟺ q else f_later d p ⟹ q.
+
+Definition offset_clauses p q md :=
+  offset_clause md p q <$> seq 0 (S md).
+
+Lemma d_offset_clauses c p q md :
+  c ⊢ p ⟹ q -> c ⊢ ⋁ offset_clauses p q md.
+Proof.
+unfold offset_clauses; intros.
+ecut. apply d_later_offsets with (k:=md), H.
+apply d_disj_elim_inline.
+- eapply d_big_disj_intro.
+  apply elem_of_list_fmap; exists md; split. done.
+  apply in_seq_iff; lia.
+  unfold offset_clause; rewrite Nat.ltb_irrefl; done.
+- eapply d_big_disj_elim; intros r Hr.
+  apply elem_of_list_fmap in Hr as (d & -> & Hd).
+  apply in_seq_iff in Hd. eapply d_big_disj_intro.
+  apply elem_of_list_fmap; exists d; split. done.
+  apply in_seq_iff; lia. unfold offset_clause.
+  assert (R: d < md) by lia; apply Nat.ltb_lt in R; rewrite R. done.
+Qed.
+
+Lemma d_offset_clauses_perm md (xs : list nat) :
+  perm_form xs ⊢ ⋀ ((λ p, ⋁ (offset_clauses (#p.1) (#p.2) md)) <$> adj xs).
+Proof.
+unfold perm_form; apply d_big_conj_intro; intros.
+apply elem_of_list_fmap in H as (ij & -> & H).
+apply d_offset_clauses, d_big_conj_elim, elem_of_list_fmap; eexists; done.
+Qed.
+
+End Offset_deduction.
+
 (*
 Now we implement a decision procedure that looks for counterexamples. If no
 counterexample is found the formula is true, and it is possible to give a
@@ -551,9 +647,9 @@ Section Counterexample_search.
 Fixpoint case_clauses (md : nat) (pred : form term) (case : list (nat * nat)) :=
   match case with
   | [] => []
-  | (i, d) :: case' => if d <? md
-    then (f_later d pred ⟺ #i) :: case_clauses md (#i) case'
-    else (f_later d pred ⟹ #i) :: case_clauses md (#i) case'
+  | (i, d) :: case' =>
+    offset_clause md pred (#i) d ::
+    case_clauses md (#i) case'
   end.
 
 Definition case_form md pred case := ⋀ case_clauses md pred case.
@@ -672,9 +768,34 @@ apply eval_case_spec, Heval. apply deduction_sound.
 d_revert; d_apply_l Hf; d_hyp.
 Qed.
 
+From stdpp Require Import sets.
+
+Lemma elem_of_list_mapM {X Y} xs ys (f : X -> list Y) :
+  ys ∈ mapM f xs ↔ Forall2 (λ y x, y ∈ f x) ys xs.
+Proof.
+Admitted.
+
 Lemma d_list_cases fv md :
   ⊢ ⋁ (case_form md ⊥ <$> list_cases fv md).
 Proof.
+unfold list_cases.
+remember (seq 0 (2 + md)) as skips.
+remember (permutations _) as perms.
+ecut. apply d_permutations. rewrite <-Heqperms.
+apply d_big_disj_elim; intros.
+apply elem_of_list_fmap in H as (xs & -> & H).
+ecut. apply d_offset_clauses_perm.
+ecut. apply d_big_disj_conj_swap.
+cut (⋁ (case_form md ⊥ <$> mapM (λ i, pair i <$> skips) xs)).
+eapply d_big_disj_elim; intros.
+apply elem_of_list_fmap in H0 as (clauses & -> & Hclauses).
+apply elem_of_list_mapM in Hclauses.
+eapply d_big_disj_intro.
+apply elem_of_list_fmap. eexists; split. done.
+apply elem_of_list_mapM.
+(* We have to compute a case list. *)
+admit. admit.
+apply d_big_disj_subseteq.
 Admitted.
 
 Theorem counterexample_complete f :

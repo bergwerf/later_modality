@@ -200,12 +200,18 @@ Qed.
 Lemma d_big_conj_intro c ps :
   (∀ p, p ∈ ps -> c ⊢ p) -> c ⊢ ⋀ ps.
 Proof.
-Admitted.
+induction ps; simpl; intros. clr; done.
+apply d_conj_intro. apply H, elem_of_list_here.
+apply IHps; intros; apply H, elem_of_list_further, H0.
+Qed.
 
 Lemma d_big_conj_elim p ps :
   p ∈ ps -> ⋀ ps ⊢ p.
 Proof.
-Admitted.
+induction ps; simpl; intros.
+apply elem_of_nil in H; done.
+inv H. d_hyp. clr_l; apply IHps, H2.
+Qed.
 
 Lemma d_big_disj_intro p q qs :
   q ∈ qs -> p ⊢ q -> p ⊢ ⋁ qs.
@@ -594,8 +600,7 @@ eapply d_disj_elim. apply IHk.
 eapply d_disj_elim. clr; apply (d_compare q (f_later k p)).
 - d_right. eapply d_big_disj_intro.
   apply elem_of_list_fmap; exists k. split. done.
-  apply elem_of_list_In, in_seq; lia.
-  d_split; d_hyp.
+  apply in_seq_iff; lia. d_split; d_hyp.
 - d_left; d_hyp.
 - d_right; clr_l.
   apply d_big_disj_subseteq.

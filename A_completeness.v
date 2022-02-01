@@ -6,11 +6,23 @@ A constructive completeness proof for the later modality
 Require Import Nat Compare_dec.
 From stdpp Require Import list.
 
+(* This lemma is missing from stdpp. *)
 Lemma elem_of_list_mapM {X Y} xs ys (f : X -> list Y) :
-  ys ∈ mapM f xs ↔ Forall2 (λ y x, y ∈ f x) ys xs.
+  ys ∈ mapM f xs <-> Forall2 (λ y x, y ∈ f x) ys xs.
 Proof.
-(* This lemma is missing in stdpp. *)
-Admitted.
+revert ys; induction xs; simpl; intro ys; split; intro H.
+- apply elem_of_list_ret in H as ->; apply Forall2_nil; done.
+- apply Forall2_nil_inv_r in H as ->; apply elem_of_list_ret; done.
+- apply elem_of_list_bind in H as (y & H1 & H2).
+  apply elem_of_list_bind in H1 as (ys' & H3 & H4).
+  apply elem_of_list_ret in H3 as ->.
+  apply Forall2_cons; split. done.
+  apply IHxs, H4.
+- inversion H; subst; clear H.
+  apply elem_of_list_bind; exists x; split; [|done].
+  apply elem_of_list_bind; exists l; split.
+  apply elem_of_list_ret; done. apply IHxs, H4.
+Qed.
 
 Inductive term :=
   | t_Const (b : bool)
@@ -867,16 +879,13 @@ apply d_big_disj_elim; intros.
 apply elem_of_list_fmap in H as (xs & -> & H).
 ecut. apply d_offset_clauses_perm.
 ecut. apply d_big_disj_conj_swap.
-cut (⋁ (case_form md ⊥ <$> mapM (λ i, pair i <$> skips) xs)).
 eapply d_big_disj_elim; intros.
-apply elem_of_list_fmap in H0 as (clauses & -> & Hclauses).
-apply elem_of_list_mapM in Hclauses.
-eapply d_big_disj_intro.
-apply elem_of_list_fmap. eexists; split. done.
+apply elem_of_list_fmap in H0 as (ps & -> & Hps).
+apply elem_of_list_mapM in Hps. eapply d_big_disj_intro.
+apply elem_of_list_fmap; eexists; split. done.
+apply elem_of_list_bind; exists xs; split; [|done].
 apply elem_of_list_mapM.
 (* We have to compute a case list. *)
-admit. admit.
-apply d_big_disj_subseteq.
 Admitted.
 
 Theorem counterexample_complete f :

@@ -3,12 +3,18 @@ A constructive completeness proof for the later modality
 ========================================================
 *)
 
-Require Import Nat.
+Require Import Nat Compare_dec.
 From stdpp Require Import list.
+
+Lemma elem_of_list_mapM {X Y} xs ys (f : X -> list Y) :
+  ys ∈ mapM f xs ↔ Forall2 (λ y x, y ∈ f x) ys xs.
+Proof.
+(* This lemma is missing in stdpp. *)
+Admitted.
 
 Inductive term :=
   | t_Const (b : bool)
-  | t_Prop (i : nat).
+  | t_Var (i : nat).
 
 Inductive connective := Conj | Disj | Impl.
 
@@ -26,7 +32,7 @@ Definition f_big {X} c (d : form X) fs := foldr (f_Conn c) d fs.
 
 Fixpoint FV (f : form term) :=
   match f with
-  | f_Term (t_Prop i) => S i
+  | f_Term (t_Var i) => S i
   | f_Term _ => 0
   | f_Later p => FV p
   | f_Conn _ p q => max (FV p) (FV q)
@@ -50,8 +56,10 @@ Global Instance fmap_form : FMap form :=
 Global Instance form_top : Top (form term) := f_Term (t_Const true).
 Global Instance form_bot : Bottom (form term) := f_Term (t_Const false).
 
-Notation "# i" := (f_Term (t_Prop i)) (at level 40, format "# i").
+Notation "$ x" := (f_Term x) (at level 40, format "$ x").
+Notation "# i" := (f_Term (t_Var i)) (at level 40, format "# i").
 Notation "▷ p" := (f_Later p) (at level 49, right associativity, format "▷ p").
+Notation "n *▷ p" := (f_later n p) (at level 50).
 Notation "p `∧` q" := (f_Conn Conj p q) (at level 56, left associativity).
 Notation "p `∨` q" := (f_Conn Disj p q) (at level 56, left associativity).
 Notation "p ⟹ q" := (f_Conn Impl p q) (at level 54, right associativity).
@@ -146,9 +154,6 @@ Ltac d_comm := d_apply_l d_conj_comm.
 Ltac d_assoc := d_apply_l d_conj_assoc.
 Ltac d_revert := apply d_impl_revert || apply d_impl_revert_top.
 
-(*
-We list all basic deductions that are needed later in the proof.
-*)
 Section Deductions.
 
 Lemma d_strong_fixp p :
@@ -262,6 +267,12 @@ Proof.
 d_split; d_intro; d_hyp.
 Qed.
 
+Lemma d_iff_symm p q :
+  p ⟺ q ⊢ q ⟺ p.
+Proof.
+d_split; d_hyp.
+Qed.
+
 Lemma d_iff_later c p q :
   c ⊢ p ⟺ q -> c ⊢ ▷p ⟺ ▷q.
 Proof.
@@ -280,11 +291,6 @@ Qed.
 
 End Deductions.
 
-(*
-But what does it mean for a formula to hold? We define this using a reference
-model that is classically equivalent to the more intuitive model of infinite
-sequences. We show that this model realizes every deduction.
-*)
 Section Reference_model.
 
 Inductive Sω :=
@@ -329,7 +335,7 @@ Definition interp (Γ : nat -> Sω) (x : term) :=
   match x with
   | t_Const false => Finite 0
   | t_Const true => Infinite
-  | t_Prop i => Γ i
+  | t_Var i => Γ i
   end.
 
 Fixpoint eval (f : form Sω) :=
@@ -406,23 +412,20 @@ Qed.
 End Reference_model.
 
 (*
-We can evaluate formulas symbolically, if we are given a context with enough
-information about the proposition variables. We will need this later on to prove
-completeness.
+We replace formulas with a term of the form `n *▷ $x`.
 *)
 Section Symbolic_evaluation.
 
 Definition atom_term fv x :=
   match x with
   | t_Const _ => True
-  | t_Prop i => i < fv
+  | t_Var i => i < fv
   end.
 
-Definition atom fv md a :=
-  ∃ x d, atom_term fv x /\ d <= md /\ a = f_later d (f_Term x).
+Definition atom fv md a := ∃ x n, atom_term fv x /\ n <= md /\ a = n *▷ $x.
 
 Lemma atom_const fv md b :
-  atom fv md (f_Term (t_Const b)).
+  atom fv md ($t_Const b).
 Proof.
 exists (t_Const b), 0; repeat split; lia.
 Qed.
@@ -472,13 +475,13 @@ induction f as [[]|p|[] p IHp q IHq]; simpl; intros Hfv Hmd.
 4-5: destruct (exhaustive_weak a b).
 12: destruct (exhaustive a b).
 4,5,8,9,12,13: eapply atom_weaken; [eassumption|lia|lia].
-1: exists (f_Term (t_Const b)).
+1: exists ($t_Const b).
 2: exists (#i). 3: exists (▷a).
 4: exists a. 5: exists b.
 6: exists b. 7: exists a.
 8: exists ⊤. 9: exists b.
 1,2: split; [|clr; apply d_iff_refl].
-apply atom_const. exists (t_Prop i), 0; simpl; split; [lia|done].
+apply atom_const. exists (t_Var i), 0; simpl; split; [lia|done].
 split; [apply atom_later, Aa|apply d_iff_later, Ha]. all: split.
 1,3,5,7,11: eapply atom_weaken; [eassumption|lia|lia]. 5: apply atom_const.
 all: d_split; d_intro.
@@ -496,8 +499,7 @@ Qed.
 End Symbolic_evaluation.
 
 (*
-The next result we need is about permutations of proposition variables. We show
-that we can obtain a disjunction of all possible orderings.
+We obtain a disjunction of all possible implication orderings.
 *)
 Section Permutation_deduction.
 
@@ -583,6 +585,9 @@ Qed.
 
 End Permutation_deduction.
 
+(*
+We obtain a disjunction with some different offsets between propositions.
+*)
 Section Offset_deduction.
 
 Lemma in_seq_iff start n len :
@@ -643,26 +648,33 @@ Qed.
 End Offset_deduction.
 
 (*
-Now we implement a decision procedure that looks for counterexamples. If no
-counterexample is found the formula is true, and it is possible to give a
-deduction.
+We implement a decision procedure that looks for counterexamples.
 *)
 Section Counterexample_search.
 
-Fixpoint case_clauses (md : nat) (pred : form term) (case : list (nat * nat)) :=
-  match case with
-  | [] => []
-  | (i, d) :: case' =>
-    offset_clause md pred (#i) d ::
-    case_clauses md (#i) case'
+Definition case_range fv (case : list (nat * nat)) :=
+  ∀ i, i < fv -> i ∈ case.*1.
+
+Definition case_term (case : list (nat * nat)) x :=
+  match x with
+  | t_Const _ => True
+  | t_Var i => i ∈ case.*1
   end.
 
-Definition case_form md pred case := ⋀ case_clauses md pred case.
+Fixpoint case_clauses (case : list (nat * nat)) (md : nat) (bot : form term) :=
+  match case with
+  | [] => []
+  | (i, n) :: case' =>
+    offset_clause md bot (#i) n ::
+    case_clauses case' md (#i)
+  end.
+
+Definition case_form md bot case := ⋀ case_clauses case md bot.
 
 Fixpoint case_context (case : list (nat * nat)) (i : nat) : nat :=
   match case with
   | [] => 0
-  | (j, d) :: case' => d + if i =? j then 0 else case_context case' i
+  | (j, n) :: case' => n + if i =? j then 0 else case_context case' i
   end.
 
 Definition eval_case (f : form term) (case : list (nat * nat)) :=
@@ -685,6 +697,102 @@ Example not_excluded_middle :
   counterexample (#0 `∨` (#0 ⟹ ⊥)) = Some [(0, 1)].
 Proof. done. Qed.
 
+Section Case_form_exhaustive.
+
+Lemma list_cases_range case fv md :
+  case ∈ list_cases fv md -> case_range fv case.
+Proof.
+unfold list_cases; intros.
+eapply elem_of_list_bind in H as (xs & H1 & H2).
+Admitted.
+
+Lemma atom_term_in_case_range fv case x :
+  case_range fv case -> atom_term fv x -> case_term case x.
+Proof.
+Admitted.
+
+Lemma offset_clause_weaken md p q n :
+  offset_clause md p q n ⊢ p ⟹ q.
+Proof.
+unfold offset_clause; destruct (_ <? _).
+Admitted.
+
+Lemma case_form_exhaustive_bot_var case md bot p :
+  p ∈ case.*1 ->
+  case_form md bot case ⊢ md *▷ bot ⟹ #p \/ ∃ n,
+  case_form md bot case ⊢ n *▷ bot ⟺ #p.
+Proof.
+unfold case_form; intros Hp; revert bot.
+induction case as [|[r k] case]; simpl; intros. apply elem_of_nil in Hp; done.
+replace (_ :: _).*1 with (r :: case.*1) in Hp by done; inv Hp.
+- (* p = r *)
+  unfold offset_clause; destruct (k <? md) eqn:E.
+  + right; exists k; d_hyp.
+  + left; clr_r. admit.
+- (* p ∈ case.*1 *)
+  destruct IHcase with (bot:=#r) as [IH|(n & IH)]. done.
+  + left. admit.
+  + unfold offset_clause; destruct (k <? md) eqn:E.
+    * right; exists (k + n). admit.
+    * left.
+Admitted.
+
+Lemma case_form_exhaustive_var_var case md bot p q :
+  p ∈ case.*1 -> q ∈ case.*1 ->
+  case_form md bot case ⊢ md *▷ #p ⟹ #q \/
+  case_form md bot case ⊢ md *▷ #q ⟹ #p \/
+  (∃ n, case_form md bot case ⊢ n *▷ #p ⟺ #q) \/
+  (∃ n, case_form md bot case ⊢ n *▷ #q ⟺ #p).
+Proof.
+unfold case_form; intros Hp Hq; revert bot.
+induction case as [|[r k] case]; simpl; intros. apply elem_of_nil in Hp; done.
+replace (_ :: _).*1 with (r :: case.*1) in Hp, Hq by done; inv Hp; inv Hq.
+- (* p = q = r *)
+  right; right; right; exists 0; clr; apply d_iff_refl.
+- (* p = r, q ∈ case.*1 *)
+  eapply case_form_exhaustive_bot_var in H1 as [].
+  left. clr_l; apply H. destruct H as (n & H).
+  right; right; left; exists n; clr_l; apply H.
+- (* p ∈ case.*1, q = r *)
+  eapply case_form_exhaustive_bot_var in H1 as [].
+  right; left. clr_l; apply H. destruct H as (n & H).
+  right; right; right; exists n; clr_l; apply H.
+- (* p, q ∈ case.*1 *)
+  destruct IHcase with (bot:=#r) as [IH|[IH|[(n & IH)|(n & IH)]]]; try done.
+  left; clr_l; done. right; left; clr_l; done.
+  right; right; left; exists n; clr_l; done.
+  right; right; right; exists n; clr_l; done.
+Qed.
+
+Lemma case_form_exhaustive_term_term case md bot x y :
+  case_term case x -> case_term case y ->
+  case_form md bot case ⊢ md *▷ $x ⟹ $y \/
+  case_form md bot case ⊢ md *▷ $y ⟹ $x \/
+  (∃ n, case_form md bot case ⊢ n *▷ $x ⟺ $y) \/
+  (∃ n, case_form md bot case ⊢ n *▷ $y ⟺ $x).
+Proof.
+Admitted.
+
+Lemma case_form_exhaustive fv md case a b :
+  case_range fv case -> atom fv md a -> atom fv md b ->
+  case_form md ⊥ case ⊢ a ⟹ b \/ case_form md ⊥ case ⊢ ▷b ⟹ a.
+Proof.
+intros Hrange (x & m & Hx & Hm & ->) (y & n & Hy & Hn & ->).
+replace (▷(n *▷ _)) with (S n *▷ $y) by done.
+edestruct case_form_exhaustive_term_term with (case:=case)(x:=x)(y:=y)
+as [H|[H|[(i & H)|(i & H)]]]. 1,2: eapply atom_term_in_case_range; done.
+- left. admit.
+- right. admit.
+- destruct (le_le_S_dec m (i + n)).
+  + left. admit.
+  + right. admit.
+- destruct (le_le_S_dec (i + m) n).
+  + left. admit.
+  + right.
+Admitted.
+
+End Case_form_exhaustive.
+
 Lemma eval_case_spec f case :
   eval_case f case = true <-> realizes (Finite ∘ case_context case) ⊤ f.
 Proof.
@@ -698,31 +806,6 @@ Proof.
 intros; eexists; rewrite <-eval_case_spec with (case:=case).
 apply find_some in H as [_ <-]; simpl; destruct (eval_case _); done.
 Qed.
-
-Definition case_range fv (case : list (nat * nat)) :=
-  ∀ i, i < fv -> ∃ d, (i, d) ∈ case.
-
-Lemma list_cases_range case fv md :
-  case ∈ list_cases fv md -> case_range fv case.
-Proof.
-unfold list_cases; intros.
-eapply elem_of_list_bind in H as (xs & H1 & H2).
-Admitted.
-
-Lemma case_form_exhaustive fv md case a b :
-  case_range fv case -> atom fv md a -> atom fv md b ->
-  case_form md ⊥ case ⊢ a ⟹ b \/ case_form md ⊥ case ⊢ ▷b ⟹ a.
-Proof.
-intros Hrange (x & dx & Hx & Hdx & ->) (y & dy & Hy & Hdy & ->).
-replace (▷f_later dy _) with (f_later (S dy) (f_Term y)) by done.
-(*
-Idea: First handle the case that x or y is ⊤. Then create a list of allowed
-terms and use induction on `case`. Both the terms x and y are such allowed
-terms, and the case formula will eventually describe every term in this list.
-During the induction we will encounter x or y, and show that the decision can be
-made for any desired relative distance.
-*)
-Admitted.
 
 Lemma case_form_reduce f  case :
   case_range (FV f) case ->
@@ -739,25 +822,25 @@ Lemma case_context_realizes_case_form md case :
 Proof.
 Admitted.
 
-Lemma fmap_later {X Y} (t : X -> Y) d (f : form X) :
-  t <$> f_later d f = f_later d (t <$> f).
+Lemma fmap_later {X Y} (t : X -> Y) n (f : form X) :
+  t <$> (n *▷ f) = n *▷ (t <$> f).
 Proof.
-induction d; simpl. done.
-rewrite <-IHd; done.
+induction n; simpl. done.
+rewrite <-IHn; done.
 Qed.
 
-Lemma eval_later d f n :
-  eval f = Finite n -> eval (f_later d f) = Finite (d + n).
+Lemma eval_later n f i :
+  eval f = Finite i -> eval (n *▷ f) = Finite (n + i).
 Proof.
-induction d; simpl; intros.
-done. rewrite IHd; done.
+induction n; simpl; intros.
+done. rewrite IHn; done.
 Qed.
 
 Lemma realizes_finite_atom Γ fv md a :
-  atom fv md a -> realizes (Finite ∘ Γ) ⊤ a -> ∃ d, a = f_later d ⊤.
+  atom fv md a -> realizes (Finite ∘ Γ) ⊤ a -> ∃ n, a = n *▷ ⊤.
 Proof.
-unfold realizes; intros ([[]|] & d & Hx & Hd & ->) H; simpl in *.
-exists d; done. all: exfalso; erewrite fmap_later, eval_later in H; done.
+unfold realizes; intros ([[]|] & n & Hx & Hn & ->) H; simpl in *.
+exists n; done. all: exfalso; erewrite fmap_later, eval_later in H; done.
 Qed.
 
 Lemma eval_case_complete f case :
@@ -772,13 +855,6 @@ etrans. apply realizes_conj_intro. apply case_context_realizes_case_form.
 apply eval_case_spec, Heval. apply deduction_sound.
 d_revert; d_apply_l Hf; d_hyp.
 Qed.
-
-From stdpp Require Import sets.
-
-Lemma elem_of_list_mapM {X Y} xs ys (f : X -> list Y) :
-  ys ∈ mapM f xs ↔ Forall2 (λ y x, y ∈ f x) ys xs.
-Proof.
-Admitted.
 
 Lemma d_list_cases fv md :
   ⊢ ⋁ (case_form md ⊥ <$> list_cases fv md).

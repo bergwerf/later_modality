@@ -4,7 +4,7 @@ A constructive completeness proof for the later modality
 *)
 
 Require Import Nat Compare_dec.
-From stdpp Require Import list.
+From stdpp Require Import gmap list.
 
 Section Generic_utilities.
 
@@ -85,12 +85,12 @@ Arguments f_Conn {_}.
 Definition f_later {X} n (f : form X) := Nat.iter n f_Later f.
 Definition f_big {X} c (d : form X) fs := foldr (f_Conn c) d fs.
 
-Fixpoint FV (f : form term) :=
+Fixpoint FV (f : form term) : gset nat :=
   match f with
-  | f_Term (t_Var i) => S i
-  | f_Term _ => 0
+  | f_Term (t_Var i) => {[ i ]}
+  | f_Term _ => ∅
   | f_Later p => FV p
-  | f_Conn _ p q => max (FV p) (FV q)
+  | f_Conn _ p q => FV p ∪ FV q
   end.
 
 Fixpoint MD (f : form term) :=
@@ -471,13 +471,16 @@ We replace formulas with a term of the form `n *▷ $x`.
 *)
 Section Symbolic_evaluation.
 
-Definition atom_term fv x :=
+Definition bounded_term `{ElemOf nat X} (range : X) x :=
   match x with
   | t_Const _ => True
-  | t_Var i => i < fv
+  | t_Var i => i ∈ range
   end.
 
-Definition atom fv md a := ∃ x n, atom_term fv x /\ n <= md /\ a = n *▷ $x.
+Implicit Types fv : gset nat.
+
+Definition atom fv md a := ∃ x n,
+  bounded_term fv x /\ n <= md /\ a = n *▷ $x.
 
 Lemma atom_const fv md b :
   atom fv md ($t_Const b).
@@ -492,15 +495,16 @@ intros (x & d & H1 & H2 & ->); exists x, (S d);
 simpl; repeat split. done. lia.
 Qed.
 
-Lemma atom_weaken fv md fv' md' a :
-  atom fv md a -> fv ≤ fv' -> md ≤ md' -> atom fv' md' a.
+Lemma atom_weaken fv fv' md md' a :
+  atom fv md a -> fv ⊆ fv' -> md ≤ md' -> atom fv' md' a.
 Proof.
 intros (x & d & H1 & H2 & ->); exists x, d; repeat split.
-destruct x; simpl in *; [done|lia]. lia.
+destruct x; simpl in *. done. apply H, H1. lia.
 Qed.
 
 Variable c : form term.
-Variable fv md : nat.
+Variable fv : gset nat.
+Variable md : nat.
 
 Hypothesis exhaustive : ∀ a b,
   atom fv md a -> atom fv md b ->
@@ -521,25 +525,25 @@ right; d_intro; d_subst_r H1; d_apply_r d_later_intro; d_hyp.
 Qed.
 
 Theorem d_reduce_to_atom f :
-  FV f <= fv -> MD f <= md ->
+  FV f ⊆ fv -> MD f <= md ->
   ∃ a, atom (FV f) (MD f) a /\ c ⊢ f ⟺ a.
 Proof.
 induction f as [[]|p|[] p IHp q IHq]; simpl; intros Hfv Hmd.
-3-6: destruct IHp as (a & Aa & Ha); try lia.
-4-6: destruct IHq as (b & Ab & Hb); try lia.
+3-6: destruct IHp as (a & Aa & Ha); try lia. 3,5,7,9: set_solver.
+4-6: destruct IHq as (b & Ab & Hb); try lia. 4,6,8: set_solver.
 4-5: destruct (exhaustive_weak a b).
 12: destruct (exhaustive a b).
-4,5,8,9,12,13: eapply atom_weaken; [eassumption|lia|lia].
+4,5,8,9,12,13: eapply atom_weaken; [eassumption|set_solver|lia].
 1: exists ($t_Const b).
 2: exists (#i). 3: exists (▷a).
 4: exists a. 5: exists b.
 6: exists b. 7: exists a.
 8: exists ⊤. 9: exists b.
 1,2: split; [|clr; apply d_iff_refl].
-apply atom_const. exists (t_Var i), 0; simpl; split; [lia|done].
+apply atom_const. exists (t_Var i), 0; simpl; split; [set_solver|done].
 split; [apply atom_later, Aa|apply d_iff_later, Ha]. all: split.
-1,3,5,7,11: eapply atom_weaken; [eassumption|lia|lia]. 5: apply atom_const.
-all: d_split; d_intro.
+1,3,5,7,11: eapply atom_weaken; [eassumption|set_solver|lia].
+5: apply atom_const. all: d_split; d_intro.
 2,4: d_split; [d_subst_r Ha|d_subst_r Hb]; try d_hyp; d_subst_r H; d_hyp.
 d_subst_r Ha; d_hyp. d_subst_r Hb; d_hyp.
 1,3: eapply d_disj_elim; [d_hyp|idtac|idtac].
@@ -693,14 +697,7 @@ We implement a decision procedure that looks for counterexamples.
 *)
 Section Counterexample_search.
 
-Definition case_range fv (case : list (nat * nat)) :=
-  ∀ i, i < fv -> i ∈ case.*1.
-
-Definition case_term (case : list (nat * nat)) x :=
-  match x with
-  | t_Const _ => True
-  | t_Var i => i ∈ case.*1
-  end.
+Implicit Types fv : gset nat.
 
 Fixpoint case_clauses (case : list (nat * nat)) (md : nat) (bot : form term) :=
   match case with
@@ -710,21 +707,21 @@ Fixpoint case_clauses (case : list (nat * nat)) (md : nat) (bot : form term) :=
     case_clauses case' md (#i)
   end.
 
-Definition case_form md bot case :=
-  ⋀ case_clauses case md bot.
-
 Fixpoint case_context (case : list (nat * nat)) (i : nat) : nat :=
   match case with
   | [] => 0
   | (j, n) :: case' => n + if i =? j then 0 else case_context case' i
   end.
 
+Definition case_form md bot case :=
+  ⋀ case_clauses case md bot.
+
 Definition eval_case (f : form term) (case : list (nat * nat)) :=
   Sω_leb Infinite (eval (interp (Finite ∘ case_context case) <$> f)).
 
 Definition list_cases fv md :=
   let skips := seq 0 (2 + md) in
-  let perms := permutations (seq 0 fv) in
+  let perms := permutations (elements fv) in
   let cases := xs ← perms; mapM (λ i, pair i <$> skips) xs in
   cases.
 
@@ -739,29 +736,12 @@ Example not_excluded_middle :
   counterexample (#0 `∨` (#0 ⟹ ⊥)) = Some [(0, 1)].
 Proof. done. Qed.
 
-Lemma list_cases_range case fv md :
-  case ∈ list_cases fv md -> case_range fv case.
-Proof.
-unfold list_cases; intros.
-eapply elem_of_list_bind in H as (xs & H1 & H2).
-Admitted.
-
-Lemma list_cases_nodup case fv md :
-  case ∈ list_cases fv md -> NoDup case.*1.
-Proof.
-Admitted.
-
-Lemma atom_term_in_case_range fv case x :
-  case_range fv case -> atom_term fv x -> case_term case x.
-Proof.
-Admitted.
+Section Case_form_exhaustive.
 
 Lemma offset_clause_weaken md p q n :
   offset_clause md p q n ⊢ p ⟹ q.
 Proof.
 Admitted.
-
-Section Case_form_exhaustive.
 
 Lemma case_form_exhaustive_bot_var case md bot p :
   p ∈ case.*1 ->
@@ -811,7 +791,8 @@ replace (_ :: _).*1 with (r :: case.*1) in Hp, Hq by done; inv Hp; inv Hq.
 Qed.
 
 Lemma case_form_exhaustive_term_term case md bot x y :
-  case_term case x -> case_term case y ->
+  bounded_term case.*1 x ->
+  bounded_term case.*1 y ->
   case_form md bot case ⊢ S md *▷ $x ⟹ $y \/
   case_form md bot case ⊢ S md *▷ $y ⟹ $x \/
   (∃ n, case_form md bot case ⊢ n *▷ $x ⟺ $y) \/
@@ -819,14 +800,23 @@ Lemma case_form_exhaustive_term_term case md bot x y :
 Proof.
 Admitted.
 
+Lemma convert_bounded_term fv xs x :
+  xs ≡ₚ elements fv -> bounded_term fv x -> bounded_term xs x.
+Proof.
+destruct x; simpl; intros.
+done. rewrite H; set_solver.
+Qed.
+
 Lemma case_form_exhaustive fv md case a b :
-  case_range fv case -> atom fv md a -> atom fv md b ->
+  case.*1 ≡ₚ elements fv ->
+  atom fv md a -> atom fv md b ->
   case_form md ⊥ case ⊢ a ⟹ b \/ case_form md ⊥ case ⊢ ▷b ⟹ a.
 Proof.
 intros Hrange (x & m & Hx & Hm & ->) (y & n & Hy & Hn & ->).
 replace (▷(n *▷ _)) with (S n *▷ $y) by done.
-edestruct case_form_exhaustive_term_term with (case:=case)(x:=x)(y:=y)
-as [H|[H|[(i & H)|(i & H)]]]. 1,2: eapply atom_term_in_case_range; done.
+edestruct case_form_exhaustive_term_term
+with (case:=case)(x:=x)(y:=y) as [H|[H|[(i & H)|(i & H)]]].
+1,2: eapply convert_bounded_term; [apply Hrange|done].
 - left. admit.
 - right. admit.
 - destruct (le_le_S_dec m (i + n)).
@@ -839,93 +829,18 @@ Admitted.
 
 End Case_form_exhaustive.
 
-Lemma eval_case_spec f case :
-  eval_case f case = true <-> realizes (Finite ∘ case_context case) ⊤ f.
-Proof.
-unfold eval_case, realizes;
-rewrite Sω_le_leb; done.
-Qed.
+Section List_cases.
 
-Lemma counterexample_sound f case :
-  counterexample f = Some case -> ∃ Γ, ¬ realizes Γ ⊤ f.
-Proof. 
-intros; eexists; rewrite <-eval_case_spec with (case:=case).
-apply find_some in H as [_ <-]; simpl; destruct (eval_case _); done.
-Qed.
-
-Lemma case_form_reduce f  case :
-  case_range (FV f) case ->
-  ∃ a, atom (FV f) (MD f) a /\
-  case_form (MD f) ⊥ case ⊢ f ⟺ a.
+Lemma list_cases_in case fv md :
+  case ∈ list_cases fv md -> case.*1 ≡ₚ elements fv.
 Proof.
-intros; eapply d_reduce_to_atom.
-intros; eapply case_form_exhaustive.
-all: done.
-Qed.
-
-Lemma fmap_later {X Y} (t : X -> Y) n (f : form X) :
-  t <$> (n *▷ f) = n *▷ (t <$> f).
-Proof.
-induction n; simpl. done.
-rewrite <-IHn; done.
-Qed.
-
-Lemma eval_later n f i :
-  eval f = Finite i -> eval (n *▷ f) = Finite (n + i).
-Proof.
-induction n; simpl; intros.
-done. rewrite IHn; done.
-Qed.
-
-Lemma realizes_later_iff Γ p q i n :
-  eval (interp Γ <$> p) = Finite i ->
-  eval (interp Γ <$> q) = Finite (n + i) ->
-  realizes Γ ⊤ (n *▷ p ⟹ q) /\ realizes Γ ⊤ (q ⟹ n *▷ p).
-Proof.
-intros Hp Hq; split; apply realizes_impl_intro_top;
-unfold realizes; erewrite fmap_later, eval_later, Hq; done.
-Qed.
-
-Lemma case_context_realizes_case_form md bot bot_n case Γ :
-  (∀ i, i ∈ case.*1 -> Γ i = Finite (bot_n + case_context case i)) ->
-  NoDup case.*1 -> eval (interp Γ <$> bot) = Finite bot_n ->
-  realizes Γ ⊤ (case_form md bot case).
-Proof.
-unfold case_form; revert bot bot_n.
-induction case as [|[i n] case]; rewrite ?fmap_cons; simpl; intros. done.
-assert (Hi : eval (interp Γ <$> #i) = Finite (n + bot_n)).
-simpl; rewrite H, Nat.eqb_refl, Nat.add_0_r, Nat.add_comm.
-done. apply elem_of_list_here. apply realizes_conj_intro.
-- edestruct realizes_later_iff. apply H1. apply Hi.
-  unfold offset_clause; destruct (n <=? md).
-  apply realizes_conj_intro; done. done.
-- inv H0; apply IHcase with (bot_n:=n + bot_n).
-  intros j Hj; rewrite H. 2: apply elem_of_list_further, Hj.
-  destruct (j =? i) eqn:E. apply Nat.eqb_eq in E as ->; done.
-  rewrite Nat.add_assoc, Nat.add_comm with (m:=n); done. done. done.
-Qed.
-
-Lemma realizes_finite_atom Γ fv md a :
-  atom fv md a -> realizes (Finite ∘ Γ) ⊤ a -> ∃ n, a = n *▷ ⊤.
-Proof.
-unfold realizes; intros ([[]|] & n & Hx & Hn & ->) H; simpl in *.
-exists n; done. all: exfalso; erewrite fmap_later, eval_later in H; done.
-Qed.
-
-Lemma eval_case_complete f case :
-  NoDup case.*1 ->
-  case_range (FV f) case ->
-  eval_case f case = true ->
-  case_form (MD f) ⊥ case ⊢ f.
-Proof.
-intros Hcase Hfv Heval; apply case_form_reduce in Hfv as (a & Ha & Hf).
-eapply realizes_finite_atom in Ha as [d ->].
-d_apply_l Hf; d_mp. d_hyp. clr; apply d_later_top.
-etrans. apply realizes_conj_intro.
-eapply case_context_realizes_case_form with (bot:=⊥)(case:=case).
-intros i Hi; rewrite Nat.add_0_l; done. done. done.
-apply eval_case_spec, Heval. apply deduction_sound.
-d_revert; d_apply_l Hf; d_hyp.
+unfold list_cases; intros.
+eapply elem_of_list_bind in H as (xs & H1 & H2).
+apply permutations_Permutation in H2; rewrite H2; clear H2.
+replace case.*1 with xs; [done|].
+apply elem_of_list_mapM in H1; induction H1. done.
+apply elem_of_list_fmap in H as (n & -> & H).
+rewrite fmap_cons, IHForall2; done.
 Qed.
 
 Lemma convert_to_case_form md bot cs xs :
@@ -968,6 +883,103 @@ apply elem_of_list_fmap; eexists; split. done.
 apply in_seq_iff; lia. apply H2.
 Qed.
 
+End List_cases.
+
+Section Soundness.
+
+Lemma eval_case_spec f case :
+  eval_case f case = true <-> realizes (Finite ∘ case_context case) ⊤ f.
+Proof.
+unfold eval_case, realizes;
+rewrite Sω_le_leb; done.
+Qed.
+
+Lemma counterexample_sound f case :
+  counterexample f = Some case -> ∃ Γ, ¬ realizes Γ ⊤ f.
+Proof. 
+intros; eexists; rewrite <-eval_case_spec with (case:=case).
+apply find_some in H as [_ <-]; simpl; destruct (eval_case _); done.
+Qed.
+
+End Soundness.
+
+Section Completeness.
+
+Lemma fmap_later {X Y} (t : X -> Y) n (f : form X) :
+  t <$> (n *▷ f) = n *▷ (t <$> f).
+Proof.
+induction n; simpl. done.
+rewrite <-IHn; done.
+Qed.
+
+Lemma eval_later n f i :
+  eval f = Finite i -> eval (n *▷ f) = Finite (n + i).
+Proof.
+induction n; simpl; intros.
+done. rewrite IHn; done.
+Qed.
+
+Lemma realizes_later_iff Γ p q i n :
+  eval (interp Γ <$> p) = Finite i ->
+  eval (interp Γ <$> q) = Finite (n + i) ->
+  realizes Γ ⊤ (n *▷ p ⟹ q) /\ realizes Γ ⊤ (q ⟹ n *▷ p).
+Proof.
+intros Hp Hq; split; apply realizes_impl_intro_top;
+unfold realizes; erewrite fmap_later, eval_later, Hq; done.
+Qed.
+
+Lemma realizes_finite_atom Γ fv md a :
+  atom fv md a -> realizes (Finite ∘ Γ) ⊤ a -> ∃ n, a = n *▷ ⊤.
+Proof.
+unfold realizes; intros ([[]|] & n & Hx & Hn & ->) H; simpl in *.
+exists n; done. all: exfalso; erewrite fmap_later, eval_later in H; done.
+Qed.
+
+Lemma case_context_realizes_case_form md bot bot_n case Γ :
+  (∀ i, i ∈ case.*1 -> Γ i = Finite (bot_n + case_context case i)) ->
+  NoDup case.*1 -> eval (interp Γ <$> bot) = Finite bot_n ->
+  realizes Γ ⊤ (case_form md bot case).
+Proof.
+unfold case_form; revert bot bot_n.
+induction case as [|[i n] case]; rewrite ?fmap_cons; simpl; intros. done.
+assert (Hi : eval (interp Γ <$> #i) = Finite (n + bot_n)).
+simpl; rewrite H, Nat.eqb_refl, Nat.add_0_r, Nat.add_comm.
+done. apply elem_of_list_here. apply realizes_conj_intro.
+- edestruct realizes_later_iff. apply H1. apply Hi.
+  unfold offset_clause; destruct (n <=? md).
+  apply realizes_conj_intro; done. done.
+- inv H0; apply IHcase with (bot_n:=n + bot_n).
+  intros j Hj; rewrite H. 2: apply elem_of_list_further, Hj.
+  destruct (j =? i) eqn:E. apply Nat.eqb_eq in E as ->; done.
+  rewrite Nat.add_assoc, Nat.add_comm with (m:=n); done. done. done.
+Qed.
+
+Lemma case_form_reduce f  case :
+  case.*1 ≡ₚ elements (FV f) ->
+  ∃ a, atom (FV f) (MD f) a /\
+  case_form (MD f) ⊥ case ⊢ f ⟺ a.
+Proof.
+intros; eapply d_reduce_to_atom.
+intros; eapply case_form_exhaustive.
+all: done.
+Qed.
+
+Lemma eval_case_complete f case :
+  case.*1 ≡ₚ elements (FV f) ->
+  eval_case f case = true ->
+  case_form (MD f) ⊥ case ⊢ f.
+Proof.
+intros Hfv Heval; edestruct case_form_reduce as (a & Ha & Hf).
+apply Hfv. eapply realizes_finite_atom in Ha as [d ->].
+d_apply_l Hf; d_mp. d_hyp. clr; apply d_later_top.
+etrans. apply realizes_conj_intro.
+eapply case_context_realizes_case_form with (bot:=⊥)(case:=case).
+intros i Hi; rewrite Nat.add_0_l; done.
+rewrite Hfv; apply NoDup_elements. done.
+apply eval_case_spec, Heval. apply deduction_sound.
+d_revert; d_apply_l Hf; d_hyp.
+Qed.
+
 Theorem counterexample_complete f :
   counterexample f = None -> ⊢ f.
 Proof.
@@ -975,12 +987,12 @@ unfold counterexample; intros. ecut.
 apply d_list_cases with (fv:=FV f)(md:=MD f).
 eapply d_big_disj_elim; intros p Hp.
 apply elem_of_list_fmap in Hp as (case & -> & Hcase).
-apply eval_case_complete.
-eapply list_cases_nodup, Hcase.
-eapply list_cases_range, Hcase.
+apply eval_case_complete. eapply list_cases_in, Hcase.
 eapply find_none, negb_false_iff in H.
 apply H. apply elem_of_list_In, Hcase.
 Qed.
+
+End Completeness.
 
 End Counterexample_search.
 

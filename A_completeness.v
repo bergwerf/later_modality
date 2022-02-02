@@ -739,13 +739,16 @@ Example not_excluded_middle :
   counterexample (#0 `∨` (#0 ⟹ ⊥)) = Some [(0, 1)].
 Proof. done. Qed.
 
-Section Case_form_exhaustive.
-
 Lemma list_cases_range case fv md :
   case ∈ list_cases fv md -> case_range fv case.
 Proof.
 unfold list_cases; intros.
 eapply elem_of_list_bind in H as (xs & H1 & H2).
+Admitted.
+
+Lemma list_cases_nodup case fv md :
+  case ∈ list_cases fv md -> NoDup case.*1.
+Proof.
 Admitted.
 
 Lemma atom_term_in_case_range fv case x :
@@ -757,6 +760,8 @@ Lemma offset_clause_weaken md p q n :
   offset_clause md p q n ⊢ p ⟹ q.
 Proof.
 Admitted.
+
+Section Case_form_exhaustive.
 
 Lemma case_form_exhaustive_bot_var case md bot p :
   p ∈ case.*1 ->
@@ -858,11 +863,6 @@ intros; eapply case_form_exhaustive.
 all: done.
 Qed.
 
-Lemma case_context_realizes_case_form md case :
-  realizes (Finite ∘ case_context case) ⊤ (case_form md ⊥ case).
-Proof.
-Admitted.
-
 Lemma fmap_later {X Y} (t : X -> Y) n (f : form X) :
   t <$> (n *▷ f) = n *▷ (t <$> f).
 Proof.
@@ -877,6 +877,34 @@ induction n; simpl; intros.
 done. rewrite IHn; done.
 Qed.
 
+Lemma realizes_later_iff Γ p q i n :
+  eval (interp Γ <$> p) = Finite i ->
+  eval (interp Γ <$> q) = Finite (n + i) ->
+  realizes Γ ⊤ (n *▷ p ⟹ q) /\ realizes Γ ⊤ (q ⟹ n *▷ p).
+Proof.
+intros Hp Hq; split; apply realizes_impl_intro_top;
+unfold realizes; erewrite fmap_later, eval_later, Hq; done.
+Qed.
+
+Lemma case_context_realizes_case_form md bot bot_n case Γ :
+  (∀ i, i ∈ case.*1 -> Γ i = Finite (bot_n + case_context case i)) ->
+  NoDup case.*1 -> eval (interp Γ <$> bot) = Finite bot_n ->
+  realizes Γ ⊤ (case_form md bot case).
+Proof.
+unfold case_form; revert bot bot_n.
+induction case as [|[i n] case]; rewrite ?fmap_cons; simpl; intros. done.
+assert (Hi : eval (interp Γ <$> #i) = Finite (n + bot_n)).
+simpl; rewrite H, Nat.eqb_refl, Nat.add_0_r, Nat.add_comm.
+done. apply elem_of_list_here. apply realizes_conj_intro.
+- edestruct realizes_later_iff. apply H1. apply Hi.
+  unfold offset_clause; destruct (n <=? md).
+  apply realizes_conj_intro; done. done.
+- inv H0; apply IHcase with (bot_n:=n + bot_n).
+  intros j Hj; rewrite H. 2: apply elem_of_list_further, Hj.
+  destruct (j =? i) eqn:E. apply Nat.eqb_eq in E as ->; done.
+  rewrite Nat.add_assoc, Nat.add_comm with (m:=n); done. done. done.
+Qed.
+
 Lemma realizes_finite_atom Γ fv md a :
   atom fv md a -> realizes (Finite ∘ Γ) ⊤ a -> ∃ n, a = n *▷ ⊤.
 Proof.
@@ -885,14 +913,17 @@ exists n; done. all: exfalso; erewrite fmap_later, eval_later in H; done.
 Qed.
 
 Lemma eval_case_complete f case :
+  NoDup case.*1 ->
   case_range (FV f) case ->
   eval_case f case = true ->
   case_form (MD f) ⊥ case ⊢ f.
 Proof.
-intros Hfv Heval; apply case_form_reduce in Hfv as (a & Ha & Hf).
+intros Hcase Hfv Heval; apply case_form_reduce in Hfv as (a & Ha & Hf).
 eapply realizes_finite_atom in Ha as [d ->].
 d_apply_l Hf; d_mp. d_hyp. clr; apply d_later_top.
-etrans. apply realizes_conj_intro. apply case_context_realizes_case_form.
+etrans. apply realizes_conj_intro.
+eapply case_context_realizes_case_form with (bot:=⊥)(case:=case).
+intros i Hi; rewrite Nat.add_0_l; done. done. done.
 apply eval_case_spec, Heval. apply deduction_sound.
 d_revert; d_apply_l Hf; d_hyp.
 Qed.
@@ -944,7 +975,9 @@ unfold counterexample; intros. ecut.
 apply d_list_cases with (fv:=FV f)(md:=MD f).
 eapply d_big_disj_elim; intros p Hp.
 apply elem_of_list_fmap in Hp as (case & -> & Hcase).
-apply eval_case_complete. eapply list_cases_range, Hcase.
+apply eval_case_complete.
+eapply list_cases_nodup, Hcase.
+eapply list_cases_range, Hcase.
 eapply find_none, negb_false_iff in H.
 apply H. apply elem_of_list_In, Hcase.
 Qed.

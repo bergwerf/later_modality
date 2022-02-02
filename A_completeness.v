@@ -6,7 +6,48 @@ A constructive completeness proof for the later modality
 Require Import Nat Compare_dec.
 From stdpp Require Import list.
 
-(* This lemma is missing from stdpp. *)
+Section Generic_utilities.
+
+Fixpoint adj {X} (xs : list X) :=
+  match xs with
+  | [] => []
+  | [_] => []
+  | x :: (y :: _) as xs' => (x, y) :: adj xs'
+  end.
+
+Lemma adj_cons {X} (x0 x1 : X) xs :
+  adj (x0 :: x1 :: xs) = (x0, x1) :: adj (x1 :: xs).
+Proof.
+done.
+Qed.
+
+Lemma adj_fmap {X Y} (f : X -> Y) xs :
+  adj (f <$> xs) = (λ p, (f (fst p), f (snd p))) <$> adj xs.
+Proof.
+induction xs; simpl. done.
+destruct xs; simpl in *. done.
+rewrite IHxs; done.
+Qed.
+
+Lemma in_seq_iff start n len :
+  n ∈ seq start len <-> start <= n < start + len.
+Proof.
+rewrite elem_of_list_In; apply in_seq.
+Qed.
+
+Lemma subseteq_mbind {X Y} (f : X -> list Y) x (xs : list X) :
+  x ∈ xs -> f x ⊆ xs ≫= f.
+Proof.
+intros H y Hy; apply elem_of_list_bind; exists x; done.
+Qed.
+
+Lemma subseteq_fmap {X Y} (f : X -> Y) (l l' : list X) :
+  l ⊆ l' -> f <$> l ⊆ f <$> l'.
+Proof.
+intros H y Hy. apply elem_of_list_fmap in Hy as (x & -> & Hx).
+apply elem_of_list_fmap; exists x; auto.
+Qed.
+
 Lemma elem_of_list_mapM {X Y} xs ys (f : X -> list Y) :
   ys ∈ mapM f xs <-> Forall2 (λ y x, y ∈ f x) ys xs.
 Proof.
@@ -23,6 +64,8 @@ revert ys; induction xs; simpl; intro ys; split; intro H.
   apply elem_of_list_bind; exists l; split.
   apply elem_of_list_ret; done. apply IHxs, H4.
 Qed.
+
+End Generic_utilities.
 
 Inductive term :=
   | t_Const (b : bool)
@@ -117,7 +160,7 @@ Inductive deduction : form term -> form term -> Prop :=
 where "p ⊢ q" := (deduction p q) and "⊢ q" := (⊤ ⊢ q).
 Notation "p ⊣⊢ q" := (p ⊢ q /\ q ⊢ p) (at level 71).
 
-Ltac inv H := inversion H; subst.
+Ltac inv H := inversion H; subst; clear H.
 Ltac cut x := transitivity x.
 Ltac ecut := etransitivity.
 Ltac refl := reflexivity.
@@ -515,13 +558,6 @@ We obtain a disjunction of all possible implication orderings.
 *)
 Section Permutation_deduction.
 
-Fixpoint adj {X} (xs : list X) :=
-  match xs with
-  | [] => []
-  | [_] => []
-  | x :: (y :: _) as xs' => (x, y) :: adj xs'
-  end.
-
 Implicit Types xs : list nat.
 
 Definition perm_form xs := ⋀ ((λ p, #p.1 ⟹ #p.2) <$> adj xs).
@@ -560,23 +596,10 @@ apply elem_of_list_fmap; exists zs'; done.
 destruct zs as [|z zs]; simpl in *.
 - apply elem_of_list_singleton in H; subst.
   unfold perm_form; simpl. d_split; d_hyp.
-- inv H; clear H; rewrite ?perm_form_unfold.
+- inv H; rewrite ?perm_form_unfold.
   repeat d_split; d_hyp.
   apply elem_of_list_fmap in H2 as (zs'' & -> & H).
   rewrite perm_form_unfold; d_split; d_hyp.
-Qed.
-
-Lemma subseteq_fmap {X Y} (f : X -> Y) (l l' : list X) :
-  l ⊆ l' -> f <$> l ⊆ f <$> l'.
-Proof.
-intros H y Hy. apply elem_of_list_fmap in Hy as (x & -> & Hx).
-apply elem_of_list_fmap; exists x; auto.
-Qed.
-
-Lemma subseteq_mbind {X Y} (f : X -> list Y) x (xs : list X) :
-  x ∈ xs -> f x ⊆ xs ≫= f.
-Proof.
-intros H y Hy; apply elem_of_list_bind; exists x; done.
 Qed.
 
 Lemma d_bind_interleave x xss :
@@ -602,19 +625,22 @@ We obtain a disjunction with some different offsets between propositions.
 *)
 Section Offset_deduction.
 
-Lemma in_seq_iff start n len :
-  n ∈ seq start len <-> start <= n < start + len.
-Proof.
-rewrite elem_of_list_In; apply in_seq.
-Qed.
+Definition offset_clause md (p q : form term) n :=
+  if n <=? md then n *▷ p ⟺ q else n *▷ p ⟹ q.
+
+Definition offset_clauses p q md :=
+  offset_clause md p q <$> seq 0 (2 + md).
+
+Definition clause_terms xs :=
+  t_Const false :: (t_Var <$> xs).
 
 Lemma d_later_offsets c p q k :
-  c ⊢ p ⟹ q -> c ⊢ f_later k p ⟹ q `∨`
-    ⋁ ((λ n, f_later n p ⟺ q) <$> seq 0 k).
+  c ⊢ p ⟹ q -> c ⊢ k *▷ p ⟹ q `∨`
+    ⋁ ((λ n, n *▷ p ⟺ q) <$> seq 0 k).
 Proof.
 intros; induction k. d_left; done.
 eapply d_disj_elim. apply IHk.
-eapply d_disj_elim. clr; apply (d_compare q (f_later k p)).
+eapply d_disj_elim. clr; apply (d_compare q (k *▷ p)).
 - d_right. eapply d_big_disj_intro.
   apply elem_of_list_fmap; exists k. split. done.
   apply in_seq_iff; lia. d_split; d_hyp.
@@ -625,36 +651,39 @@ eapply d_disj_elim. clr; apply (d_compare q (f_later k p)).
   rewrite ?in_seq_iff; lia.
 Qed.
 
-Definition offset_clause md (p q : form term) d :=
-  if d <? md then f_later d p ⟺ q else f_later d p ⟹ q.
-
-Definition offset_clauses p q md :=
-  offset_clause md p q <$> seq 0 (S md).
-
 Lemma d_offset_clauses c p q md :
   c ⊢ p ⟹ q -> c ⊢ ⋁ offset_clauses p q md.
 Proof.
 unfold offset_clauses; intros.
-ecut. apply d_later_offsets with (k:=md), H.
+ecut. apply d_later_offsets with (k:=S md), H.
 apply d_disj_elim_inline.
 - eapply d_big_disj_intro.
-  apply elem_of_list_fmap; exists md; split. done.
-  apply in_seq_iff; lia.
-  unfold offset_clause; rewrite Nat.ltb_irrefl; done.
+  apply elem_of_list_fmap; exists (S md); split. done.
+  apply in_seq_iff; lia. unfold offset_clause.
+  replace (S md <=? md) with false. done.
+  symmetry; apply Nat.leb_gt; lia.
 - eapply d_big_disj_elim; intros r Hr.
   apply elem_of_list_fmap in Hr as (d & -> & Hd).
   apply in_seq_iff in Hd. eapply d_big_disj_intro.
   apply elem_of_list_fmap; exists d; split. done.
   apply in_seq_iff; lia. unfold offset_clause.
-  assert (R: d < md) by lia; apply Nat.ltb_lt in R; rewrite R. done.
+  replace (d <=? md) with true. done.
+  symmetry; apply Nat.leb_le; lia.
 Qed.
 
 Lemma d_offset_clauses_perm md (xs : list nat) :
-  perm_form xs ⊢ ⋀ ((λ p, ⋁ (offset_clauses (#p.1) (#p.2) md)) <$> adj xs).
+  perm_form xs ⊢ ⋀ ((λ p, ⋁ (offset_clauses ($p.1) ($p.2) md))
+    <$> adj (clause_terms xs)).
 Proof.
 unfold perm_form; apply d_big_conj_intro; intros.
-apply elem_of_list_fmap in H as (ij & -> & H).
-apply d_offset_clauses, d_big_conj_elim, elem_of_list_fmap; eexists; done.
+apply elem_of_list_fmap in H as (p' & -> & H).
+unfold clause_terms in H; destruct xs. apply elem_of_nil in H; done.
+rewrite fmap_cons, adj_cons, <-fmap_cons in H.
+apply elem_of_cons in H as [->|].
+- clr; apply d_offset_clauses; simpl.
+  d_intro; d_apply_r d_false_elim; d_hyp.
+- rewrite adj_fmap in H; apply elem_of_list_fmap in H as (ij & -> & H).
+  apply d_offset_clauses, d_big_conj_elim, elem_of_list_fmap; exists ij; done.
 Qed.
 
 End Offset_deduction.
@@ -681,7 +710,8 @@ Fixpoint case_clauses (case : list (nat * nat)) (md : nat) (bot : form term) :=
     case_clauses case' md (#i)
   end.
 
-Definition case_form md bot case := ⋀ case_clauses case md bot.
+Definition case_form md bot case :=
+  ⋀ case_clauses case md bot.
 
 Fixpoint case_context (case : list (nat * nat)) (i : nat) : nat :=
   match case with
@@ -726,19 +756,18 @@ Admitted.
 Lemma offset_clause_weaken md p q n :
   offset_clause md p q n ⊢ p ⟹ q.
 Proof.
-unfold offset_clause; destruct (_ <? _).
 Admitted.
 
 Lemma case_form_exhaustive_bot_var case md bot p :
   p ∈ case.*1 ->
-  case_form md bot case ⊢ md *▷ bot ⟹ #p \/ ∃ n,
+  case_form md bot case ⊢ S md *▷ bot ⟹ #p \/ ∃ n,
   case_form md bot case ⊢ n *▷ bot ⟺ #p.
 Proof.
 unfold case_form; intros Hp; revert bot.
 induction case as [|[r k] case]; simpl; intros. apply elem_of_nil in Hp; done.
 replace (_ :: _).*1 with (r :: case.*1) in Hp by done; inv Hp.
 - (* p = r *)
-  unfold offset_clause; destruct (k <? md) eqn:E.
+  unfold offset_clause; destruct (k <=? md) eqn:E.
   + right; exists k; d_hyp.
   + left; clr_r. admit.
 - (* p ∈ case.*1 *)
@@ -751,8 +780,8 @@ Admitted.
 
 Lemma case_form_exhaustive_var_var case md bot p q :
   p ∈ case.*1 -> q ∈ case.*1 ->
-  case_form md bot case ⊢ md *▷ #p ⟹ #q \/
-  case_form md bot case ⊢ md *▷ #q ⟹ #p \/
+  case_form md bot case ⊢ S md *▷ #p ⟹ #q \/
+  case_form md bot case ⊢ S md *▷ #q ⟹ #p \/
   (∃ n, case_form md bot case ⊢ n *▷ #p ⟺ #q) \/
   (∃ n, case_form md bot case ⊢ n *▷ #q ⟺ #p).
 Proof.
@@ -778,8 +807,8 @@ Qed.
 
 Lemma case_form_exhaustive_term_term case md bot x y :
   case_term case x -> case_term case y ->
-  case_form md bot case ⊢ md *▷ $x ⟹ $y \/
-  case_form md bot case ⊢ md *▷ $y ⟹ $x \/
+  case_form md bot case ⊢ S md *▷ $x ⟹ $y \/
+  case_form md bot case ⊢ S md *▷ $y ⟹ $x \/
   (∃ n, case_form md bot case ⊢ n *▷ $x ⟺ $y) \/
   (∃ n, case_form md bot case ⊢ n *▷ $y ⟺ $x).
 Proof.
@@ -868,25 +897,45 @@ apply eval_case_spec, Heval. apply deduction_sound.
 d_revert; d_apply_l Hf; d_hyp.
 Qed.
 
+Lemma convert_to_case_form md bot cs xs :
+  Forall2 (λ c p, c ∈ offset_clauses ($p.1) ($p.2) md)
+    cs (adj (bot :: (t_Var <$> xs))) ->
+  ∃ case, Forall2 (λ c i, c.1 = i /\ c.2 ≤ S md) case xs /\
+    ⋀ cs ⊢ case_form md ($bot) case.
+Proof.
+unfold case_form; revert bot cs; induction xs as [|i xs]; intros.
+- apply Forall2_nil_inv_r in H as ->.
+  exists []; split. apply Forall2_nil; done. done.
+- rewrite fmap_cons, adj_cons in H.
+  apply Forall2_cons_inv_r in H as (c & cs' & H1 & H2 & ->).
+  apply IHxs in H2 as (case & IH1 & IH2). unfold offset_clauses in H1.
+  apply elem_of_list_fmap in H1 as (n & -> & Hn); simpl.
+  apply in_seq_iff in Hn; exists ((i, n) :: case); split.
+  apply Forall2_cons; simpl; split. lia. apply IH1.
+  simpl. d_split. d_hyp. clr_l; apply IH2.
+Qed.
+
 Lemma d_list_cases fv md :
   ⊢ ⋁ (case_form md ⊥ <$> list_cases fv md).
 Proof.
 unfold list_cases.
-remember (seq 0 (2 + md)) as skips.
-remember (permutations _) as perms.
-ecut. apply d_permutations. rewrite <-Heqperms.
+ecut. apply d_permutations.
 apply d_big_disj_elim; intros.
 apply elem_of_list_fmap in H as (xs & -> & H).
-ecut. apply d_offset_clauses_perm.
+ecut. apply d_offset_clauses_perm with (md:=md).
 ecut. apply d_big_disj_conj_swap.
 eapply d_big_disj_elim; intros.
-apply elem_of_list_fmap in H0 as (ps & -> & Hps).
-apply elem_of_list_mapM in Hps. eapply d_big_disj_intro.
-apply elem_of_list_fmap; eexists; split. done.
+apply elem_of_list_fmap in H0 as (cs & -> & Hcs).
+apply elem_of_list_mapM in Hcs.
+apply convert_to_case_form in Hcs as (case & H1 & H2).
+eapply d_big_disj_intro.
+apply elem_of_list_fmap; exists case; split. done.
 apply elem_of_list_bind; exists xs; split; [|done].
-apply elem_of_list_mapM.
-(* We have to compute a case list. *)
-Admitted.
+eapply elem_of_list_mapM, Forall2_impl. apply H1.
+intros [i n] i'; intros (<- & Hn); simpl in Hn.
+apply elem_of_list_fmap; eexists; split. done.
+apply in_seq_iff; lia. apply H2.
+Qed.
 
 Theorem counterexample_complete f :
   counterexample f = None -> ⊢ f.

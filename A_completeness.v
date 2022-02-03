@@ -196,8 +196,8 @@ Ltac d_hyp := refl || (clr_l; d_hyp) || (clr_r; d_hyp).
 Lemma d_conj_comm p q : p `∧` q ⊢ q `∧` p.
 Proof. d_split; d_hyp. Qed.
 
-Lemma d_conj_assoc p q r : (p `∧` q) `∧` r ⊢ p `∧` (q `∧` r).
-Proof. repeat d_split; d_hyp. Qed.
+Lemma d_conj_assoc p q r : (p `∧` q) `∧` r ⊣⊢ p `∧` (q `∧` r).
+Proof. split; repeat d_split; d_hyp. Qed.
 
 Lemma d_impl_revert c p q : c ⊢ p ⟹ q -> c `∧` p ⊢ q.
 Proof. intros; d_mp; [clr_r; done|clr_l; done]. Qed.
@@ -210,6 +210,8 @@ Ltac d_assoc := d_apply_l d_conj_assoc.
 Ltac d_revert := apply d_impl_revert || apply d_impl_revert_top.
 
 Section Deductions.
+
+Implicit Types p q : form term.
 
 Lemma d_strong_fixp p :
   ▷p ⟹ p ⊢ p.
@@ -328,20 +330,60 @@ Proof.
 d_split; d_hyp.
 Qed.
 
-Lemma d_iff_later c p q :
-  c ⊢ p ⟺ q -> c ⊢ ▷p ⟺ ▷q.
+Lemma d_iff_trans p q r :
+  p ⟺ q `∧` q ⟺ r ⊢ p ⟺ r.
 Proof.
-intros; d_split.
-all: d_apply_l d_later_intro; d_intro.
-all: d_apply_l d_later_conj; apply d_later_mono.
-all: d_revert; d_apply_l H; constructor.
+d_split; d_intro; d_mp; try d_hyp; d_mp.
+clr_r; clr_r; d_hyp. d_hyp.
+clr_r; clr_l; d_hyp. d_hyp.
 Qed.
 
-Lemma d_later_top d :
-  ⊢ f_later d ⊤.
+Lemma d_impl_later p q :
+  p ⟹ q ⊢ ▷p ⟹ ▷q.
 Proof.
-induction d; simpl. constructor.
+d_apply_l d_later_intro; d_intro.
+d_apply_l d_later_conj; apply d_later_mono.
+d_revert; done.
+Qed.
+
+Lemma d_impl_laters m n p q :
+  m ≤ n -> p ⟹ q ⊢ m *▷ p ⟹ n *▷ q.
+Proof.
+intro H; induction H.
+induction m; simpl; intros. done. d_apply_r d_impl_later; done.
+d_intro; simpl; d_apply_r d_later_intro; d_revert; done.
+Qed.
+
+Lemma d_iff_laters n p q :
+  p ⟺ q ⊢ n *▷ p ⟺ n *▷ q.
+Proof.
+d_split; d_apply_r d_impl_laters; d_hyp.
+Qed.
+
+Lemma d_laters_le m n p :
+  m ≤ n -> m *▷ p ⊢ n *▷ p.
+Proof.
+intro H; induction H; simpl. done.
+d_apply_r d_later_intro; apply IHle.
+Qed.
+
+Lemma d_laters_intro n p :
+  p ⊢ n *▷ p.
+Proof.
+induction n; simpl. done.
 d_apply_r d_later_intro; done.
+Qed.
+
+Lemma laters_S n p :
+  ▷(n *▷ p) = S n *▷ p.
+Proof.
+done.
+Qed.
+
+Lemma laters_add m n p :
+  (m + n) *▷ p = m *▷ (n *▷ p).
+Proof.
+induction m; simpl; congruence.
 Qed.
 
 End Deductions.
@@ -540,9 +582,9 @@ induction f as [[]|p|[] p IHp q IHq]; simpl; intros Hfv Hmd.
 6: exists b. 7: exists a.
 8: exists ⊤. 9: exists b.
 1,2: split; [|clr; apply d_iff_refl].
-apply atom_const. exists (t_Var i), 0; simpl; split; [set_solver|done].
-split; [apply atom_later, Aa|apply d_iff_later, Ha]. all: split.
-1,3,5,7,11: eapply atom_weaken; [eassumption|set_solver|lia].
+apply atom_const. exists (t_Var i), 0; simpl; split; [set_solver|done]. split.
+apply atom_later, Aa. d_apply_l Ha; d_split; d_apply_r d_impl_later; d_hyp.
+all: split. 1,3,5,7,11: eapply atom_weaken; [eassumption|set_solver|lia].
 5: apply atom_const. all: d_split; d_intro.
 2,4: d_split; [d_subst_r Ha|d_subst_r Hb]; try d_hyp; d_subst_r H; d_hyp.
 d_subst_r Ha; d_hyp. d_subst_r Hb; d_hyp.
@@ -739,9 +781,10 @@ Proof. done. Qed.
 Section Case_form_exhaustive.
 
 Lemma offset_clause_weaken md p q n :
-  offset_clause md p q n ⊢ p ⟹ q.
+  offset_clause md p q n ⊢ n *▷ p ⟹ q.
 Proof.
-Admitted.
+unfold offset_clause; destruct (_ <=? _); d_hyp.
+Qed.
 
 Lemma case_form_exhaustive_bot_var case md bot p :
   p ∈ case.*1 ->
@@ -749,19 +792,32 @@ Lemma case_form_exhaustive_bot_var case md bot p :
   case_form md bot case ⊢ n *▷ bot ⟺ #p.
 Proof.
 unfold case_form; intros Hp; revert bot.
-induction case as [|[r k] case]; simpl; intros. apply elem_of_nil in Hp; done.
-replace (_ :: _).*1 with (r :: case.*1) in Hp by done; inv Hp.
+induction case as [|[r k] case]; simpl; intros.
+apply elem_of_nil in Hp; done.
+rewrite fmap_cons in Hp; inv Hp.
 - (* p = r *)
   unfold offset_clause; destruct (k <=? md) eqn:E.
   + right; exists k; d_hyp.
-  + left; clr_r. admit.
+  + left; clr_r; d_intro; d_mp. d_hyp. clr_l.
+    rewrite laters_S; apply d_laters_le.
+    apply Nat.leb_gt in E; lia.
 - (* p ∈ case.*1 *)
   destruct IHcase with (bot:=#r) as [IH|(n & IH)]. done.
-  + left. admit.
-  + unfold offset_clause; destruct (k <? md) eqn:E.
-    * right; exists (k + n). admit.
-    * left.
-Admitted.
+  + left; d_intro; d_mp. d_apply_r IH; d_hyp.
+    d_comm; d_assoc; clr_r. rewrite laters_S.
+    d_comm; d_revert; d_apply_l offset_clause_weaken.
+    d_apply_r d_impl_laters; [|done]. d_intro; d_mp.
+    d_hyp. clr_l; apply d_laters_intro.
+  + unfold offset_clause; destruct (k <=? md) eqn:E.
+    * right; exists (n + k). d_comm; d_revert; d_apply_l IH; d_intro.
+      d_apply_r d_iff_trans; d_split; [|d_hyp].
+      rewrite laters_add; d_apply_r d_iff_laters. d_hyp.
+    * left. d_comm; d_revert; d_apply_l IH; d_intro; d_intro.
+      d_mp. d_hyp. d_assoc; clr_l. d_mp.
+      d_apply_r d_impl_laters. d_hyp. done.
+      clr_l; rewrite laters_S, <-laters_add.
+      apply d_laters_le; apply Nat.leb_gt in E; lia.
+Qed.
 
 Lemma case_form_exhaustive_var_var case md bot p q :
   p ∈ case.*1 -> q ∈ case.*1 ->
@@ -790,15 +846,34 @@ replace (_ :: _).*1 with (r :: case.*1) in Hp, Hq by done; inv Hp; inv Hq.
   right; right; right; exists n; clr_l; done.
 Qed.
 
-Lemma case_form_exhaustive_term_term case md bot x y :
+Lemma case_form_exhaustive_const_term case md b x :
+  bounded_term case.*1 x ->
+  case_form md ⊥ case ⊢ S md *▷ $x ⟹ $t_Const b \/
+  case_form md ⊥ case ⊢ S md *▷ $t_Const b ⟹ $x \/
+  (∃ n, case_form md ⊥ case ⊢ n *▷ $t_Const b ⟺ $x).
+Proof.
+intros; destruct b. left; d_intro; clr; done.
+destruct x. destruct b. right; left; d_intro; clr; done.
+right; right; exists 0; clr; apply d_iff_refl.
+edestruct case_form_exhaustive_bot_var. apply H.
+right; left; apply H0. right; right; apply H0.
+Qed.
+
+Lemma case_form_exhaustive_term_term case md x y :
   bounded_term case.*1 x ->
   bounded_term case.*1 y ->
-  case_form md bot case ⊢ S md *▷ $x ⟹ $y \/
-  case_form md bot case ⊢ S md *▷ $y ⟹ $x \/
-  (∃ n, case_form md bot case ⊢ n *▷ $x ⟺ $y) \/
-  (∃ n, case_form md bot case ⊢ n *▷ $y ⟺ $x).
+  case_form md ⊥ case ⊢ S md *▷ $x ⟹ $y \/
+  case_form md ⊥ case ⊢ S md *▷ $y ⟹ $x \/
+  (∃ n, case_form md ⊥ case ⊢ n *▷ $x ⟺ $y) \/
+  (∃ n, case_form md ⊥ case ⊢ n *▷ $y ⟺ $x).
 Proof.
-Admitted.
+intros; destruct x.
+edestruct case_form_exhaustive_const_term.
+apply H0. right; left; apply H1. destruct H1; auto.
+destruct y. edestruct case_form_exhaustive_const_term.
+apply H. left; apply H1. destruct H1; auto.
+apply case_form_exhaustive_var_var; done.
+Qed.
 
 Lemma convert_bounded_term fv xs x :
   xs ≡ₚ elements fv -> bounded_term fv x -> bounded_term xs x.
@@ -813,19 +888,28 @@ Lemma case_form_exhaustive fv md case a b :
   case_form md ⊥ case ⊢ a ⟹ b \/ case_form md ⊥ case ⊢ ▷b ⟹ a.
 Proof.
 intros Hrange (x & m & Hx & Hm & ->) (y & n & Hy & Hn & ->).
-replace (▷(n *▷ _)) with (S n *▷ $y) by done.
-edestruct case_form_exhaustive_term_term
+rewrite laters_S; edestruct case_form_exhaustive_term_term
 with (case:=case)(x:=x)(y:=y) as [H|[H|[(i & H)|(i & H)]]].
 1,2: eapply convert_bounded_term; [apply Hrange|done].
-- left. admit.
-- right. admit.
+- left; d_apply_l H; d_intro. d_apply_r d_laters_intro.
+  d_mp. d_hyp. clr_l; apply d_laters_le; lia.
+- right; d_apply_l H; d_intro. d_apply_r d_laters_intro.
+  d_mp. d_hyp. clr_l; apply d_laters_le; lia.
 - destruct (le_le_S_dec m (i + n)).
-  + left. admit.
-  + right. admit.
+  + left; d_apply_l H; d_apply_l d_iff_laters.
+    d_intro; d_mp. d_hyp. clr_l; rewrite <-laters_add.
+    apply d_laters_le; lia.
+  + right; d_apply_l H; d_apply_l d_iff_laters.
+    d_intro; ecut. d_mp; [|clr_l; done]; d_hyp.
+    rewrite <-laters_add; apply d_laters_le; lia.
 - destruct (le_le_S_dec (i + m) n).
-  + left. admit.
-  + right.
-Admitted.
+  + left; d_apply_l H; d_apply_l d_iff_laters.
+    d_intro; ecut. d_mp; [|clr_l; done]; d_hyp.
+    rewrite <-laters_add; apply d_laters_le; lia.
+  + right; d_apply_l H; d_apply_l d_iff_laters.
+    d_intro; d_mp. d_hyp. clr_l; rewrite <-laters_add.
+    apply d_laters_le; lia.
+Qed.
 
 End Case_form_exhaustive.
 
@@ -971,7 +1055,7 @@ Lemma eval_case_complete f case :
 Proof.
 intros Hfv Heval; edestruct case_form_reduce as (a & Ha & Hf).
 apply Hfv. eapply realizes_finite_atom in Ha as [d ->].
-d_apply_l Hf; d_mp. d_hyp. clr; apply d_later_top.
+d_apply_l Hf; d_mp. d_hyp. clr; apply d_laters_intro.
 etrans. apply realizes_conj_intro.
 eapply case_context_realizes_case_form with (bot:=⊥)(case:=case).
 intros i Hi; rewrite Nat.add_0_l; done.
@@ -997,8 +1081,8 @@ End Completeness.
 End Counterexample_search.
 
 (*
-The final result: if q always follows from p in the reference model, then there
-exists a deduction of the type p ⊢ q.
+The final result: if q always follows from p in the model,
+then there exists a deduction of the type p ⊢ q.
 *)
 Theorem deduction_complete p q :
   (∀ Γ, realizes Γ p q) -> p ⊢ q.

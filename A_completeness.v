@@ -30,7 +30,7 @@ rewrite IHxs; done.
 Qed.
 
 Lemma in_seq_iff start n len :
-  n ∈ seq start len <-> start <= n < start + len.
+  n ∈ seq start len <-> start ≤ n < start + len.
 Proof.
 rewrite elem_of_list_In; apply in_seq.
 Qed.
@@ -67,12 +67,8 @@ Qed.
 
 End Generic_utilities.
 
-Inductive term :=
-  | t_Const (b : bool)
-  | t_Var (i : nat).
-
+Inductive term := t_Const (b : bool) | t_Var (i : nat).
 Inductive connective := Conj | Disj | Impl.
-
 Inductive form (X : Type) :=
   | f_Term (x : X)
   | f_Later (p : form X)
@@ -108,9 +104,8 @@ Global Instance fmap_form : FMap form :=
     | f_Conn c p q => f_Conn c (rec p) (rec q)
     end.
 
-Global Instance form_top : Top (form term) := f_Term (t_Const true).
-Global Instance form_bot : Bottom (form term) := f_Term (t_Const false).
-
+Notation "⊤" := (f_Term (t_Const true)).
+Notation "⊥" := (f_Term (t_Const false)).
 Notation "$ x" := (f_Term x) (at level 40, format "$ x").
 Notation "# i" := (f_Term (t_Var i)) (at level 40, format "# i").
 Notation "▷ p" := (f_Later p) (at level 49, right associativity, format "▷ p").
@@ -153,7 +148,7 @@ Inductive deduction : form term -> form term -> Prop :=
   | d_impl_elim c p q    : c ⊢ p ⟹ q -> c ⊢ p -> c ⊢ q
   | d_later_intro p      : p ⊢ ▷p
   | d_later_elim p       : ⊢ ▷p -> ⊢ p
-  | d_later_fixp p       : ▷p ⊢ p -> ⊢ p
+  | d_later_fix p        : ▷p ⊢ p -> ⊢ p
   | d_later_mono p q     : p ⊢ q -> ▷p ⊢ ▷q
   | d_later_conj p q     : ▷p `∧` ▷q ⊢ ▷(p `∧` q)
   | d_compare p q        : ⊢ p ⟹ q `∨` ▷q ⟹ p
@@ -213,11 +208,11 @@ Section Deductions.
 
 Implicit Types p q : form term.
 
-Lemma d_strong_fixp p :
+Lemma d_strong_fix p :
   ▷p ⟹ p ⊢ p.
 Proof.
 d_mp; [clr|refl].
-eapply d_later_fixp.
+eapply d_later_fix.
 d_intro; d_mp; [d_hyp|].
 d_comm; d_revert.
 d_apply_l d_later_intro.
@@ -231,7 +226,7 @@ Proof.
 eapply d_disj_elim.
 clr; apply d_compare with (p:=p)(q:=q).
 d_apply_r d_later_intro; d_hyp. cut (▷q). d_mp. d_hyp.
-d_apply_r d_later_intro; d_apply_r d_strong_fixp.
+d_apply_r d_later_intro; d_apply_r d_strong_fix.
 d_intro; d_mp; [d_hyp|]; d_mp; d_hyp.
 apply d_later_mono; d_intro; d_hyp.
 Qed.
@@ -275,13 +270,12 @@ apply elem_of_nil in H; done.
 inv H. d_hyp. clr_l; apply IHps, H2.
 Qed.
 
-Lemma d_big_disj_intro p q qs :
-  q ∈ qs -> p ⊢ q -> p ⊢ ⋁ qs.
+Lemma d_big_disj_intro p ps :
+  p ∈ ps -> p ⊢ ⋁ ps.
 Proof.
-induction qs; simpl; intros.
+induction ps; simpl; intros.
 apply not_elem_of_nil in H; done.
-inv H; [d_left|d_right]. done.
-apply IHqs; done.
+inv H; [d_left|d_right]. done. auto.
 Qed.
 
 Lemma d_big_disj_elim ps q :
@@ -298,8 +292,7 @@ Lemma d_big_disj_subseteq ps qs :
   ps ⊆ qs -> ⋁ ps ⊢ ⋁ qs.
 Proof.
 intros; apply d_big_disj_elim; intros.
-apply d_big_disj_intro with (q:=p).
-auto. done.
+d_apply_r d_big_disj_intro. done. auto.
 Qed.
 
 Lemma d_big_disj_conj_swap {X} (f : X -> list (form term)) (xs : list X) :
@@ -311,11 +304,11 @@ clr_r; done. clr_l; apply IHxs.
 d_revert; apply d_big_disj_elim; intros p Hp; d_intro.
 d_comm; d_revert; apply d_big_disj_elim; intros q Hq; d_intro.
 apply elem_of_list_fmap in Hq as (qs & -> & Hqs).
-eapply d_big_disj_intro; simpl.
-apply elem_of_list_fmap; eexists; split. done.
+d_apply_r d_big_disj_intro. d_comm; done.
+apply elem_of_list_fmap; exists (p :: qs); simpl; split. done. 
 apply elem_of_list_bind; exists p; split; [|done].
 apply elem_of_list_bind; exists qs; split; [|done].
-apply elem_of_list_ret; done. d_comm; done.
+apply elem_of_list_ret; done.
 Qed.
 
 Lemma d_iff_refl p :
@@ -423,7 +416,7 @@ Definition Sω_leb (p0 p1 : Sω) :=
 
 Definition Sω_le (p0 p1 : Sω) :=
   match p0, p1 with
-  | Finite n0, Finite n1 => n0 <= n1
+  | Finite n0, Finite n1 => n0 ≤ n1
   | _, Infinite => True
   | _, _ => False
   end.
@@ -522,7 +515,7 @@ Definition bounded_term `{ElemOf nat X} (range : X) x :=
 Implicit Types fv : gset nat.
 
 Definition atom fv md a := ∃ x n,
-  bounded_term fv x /\ n <= md /\ a = n *▷ $x.
+  bounded_term fv x /\ n ≤ md /\ a = n *▷ $x.
 
 Lemma atom_const fv md b :
   atom fv md ($t_Const b).
@@ -544,13 +537,13 @@ intros (x & d & H1 & H2 & ->); exists x, d; repeat split.
 destruct x; simpl in *. done. apply H, H1. lia.
 Qed.
 
-Variable c : form term.
+Variable ctx : form term.
 Variable fv : gset nat.
 Variable md : nat.
 
 Hypothesis exhaustive : ∀ a b,
   atom fv md a -> atom fv md b ->
-  c ⊢ a ⟹ b \/ c ⊢ ▷b ⟹ a.
+  ctx ⊢ a ⟹ b \/ ctx ⊢ ▷b ⟹ a.
 
 Ltac d_apply_r_lift_iff H :=
   (d_apply_r d_conj_elim_l; d_apply_r H) ||
@@ -560,15 +553,15 @@ Ltac d_subst_r H := d_mp; [(d_apply_r H || d_apply_r_lift_iff H); d_hyp|].
 
 Local Lemma exhaustive_weak a b :
   atom fv md a -> atom fv md b ->
-  c ⊢ a ⟹ b \/ c ⊢ b ⟹ a.
+  ctx ⊢ a ⟹ b \/ ctx ⊢ b ⟹ a.
 Proof.
 intros; destruct (exhaustive a b); try done. left; done.
 right; d_intro; d_subst_r H1; d_apply_r d_later_intro; d_hyp.
 Qed.
 
 Theorem d_reduce_to_atom f :
-  FV f ⊆ fv -> MD f <= md ->
-  ∃ a, atom (FV f) (MD f) a /\ c ⊢ f ⟺ a.
+  FV f ⊆ fv -> MD f ≤ md ->
+  ∃ a, atom (FV f) (MD f) a /\ ctx ⊢ f ⟺ a.
 Proof.
 induction f as [[]|p|[] p IHp q IHq]; simpl; intros Hfv Hmd.
 3-6: destruct IHp as (a & Aa & Ha); try lia. 3,5,7,9: set_solver.
@@ -593,7 +586,7 @@ d_subst_r H; d_subst_r Ha; d_hyp. d_subst_r Hb; d_hyp.
 d_subst_r Ha; d_hyp. d_subst_r H; d_subst_r Hb; d_hyp. 
 d_right; d_subst_r Hb; d_hyp. d_left; d_subst_r Ha; d_hyp.
 constructor. d_intro; d_subst_r Hb; d_subst_r H; d_subst_r Ha; d_hyp.
-d_apply_r d_strong_fixp; d_intro; d_subst_r Hb; d_mp; [d_hyp|].
+d_apply_r d_strong_fix; d_intro; d_subst_r Hb; d_mp; [d_hyp|].
 d_subst_r Ha; d_subst_r H; d_hyp. d_intro; d_subst_r Hb; d_hyp.
 Qed.
 
@@ -606,7 +599,8 @@ Section Permutation_deduction.
 
 Implicit Types xs : list nat.
 
-Definition perm_form xs := ⋀ ((λ p, #p.1 ⟹ #p.2) <$> adj xs).
+Definition perm_form xs :=
+  ⋀ ((λ p, #p.1 ⟹ #p.2) <$> adj xs).
 
 Lemma perm_form_unfold x y zs :
   perm_form (x :: y :: zs) = #x ⟹ #y `∧` perm_form (y :: zs).
@@ -635,9 +629,9 @@ d_revert; d_apply_l d_conj_intro.
 apply d_perm_form_tl. done. d_revert.
 d_apply_l IHzs. apply d_big_disj_elim; intros; d_intro; d_intro.
 apply elem_of_list_fmap in H as (zs' & -> & H).
-apply d_big_disj_intro with (q:=perm_form (y :: zs')).
-apply elem_of_list_fmap; eexists; split; [done|].
-apply elem_of_list_fmap; exists zs'; done.
+d_apply_r d_big_disj_intro.
+2: { apply elem_of_list_fmap; eexists; split; [done|].
+apply elem_of_list_fmap; exists zs'; done. }
 (* y comes before zs' ∈ interleave x zs. *)
 destruct zs as [|z zs]; simpl in *.
 - apply elem_of_list_singleton in H; subst.
@@ -680,6 +674,13 @@ Definition offset_clauses p q md :=
 Definition clause_terms xs :=
   t_Const false :: (t_Var <$> xs).
 
+Lemma in_fmap_seq {X} (f : nat -> X) m n :
+  m ≤ n -> f m ∈ f <$> seq 0 (S n).
+Proof.
+intros; apply elem_of_list_fmap; exists m; split.
+done. apply in_seq_iff; lia.
+Qed.
+
 Lemma d_later_offsets c p q k :
   c ⊢ p ⟹ q -> c ⊢ k *▷ p ⟹ q `∨`
     ⋁ ((λ n, n *▷ p ⟺ q) <$> seq 0 k).
@@ -687,9 +688,8 @@ Proof.
 intros; induction k. d_left; done.
 eapply d_disj_elim. apply IHk.
 eapply d_disj_elim. clr; apply (d_compare q (k *▷ p)).
-- d_right. eapply d_big_disj_intro.
-  apply elem_of_list_fmap; exists k. split. done.
-  apply in_seq_iff; lia. d_split; d_hyp.
+- d_right; d_apply_r d_big_disj_intro.
+  2: apply in_fmap_seq; done. d_split; d_hyp.
 - d_left; d_hyp.
 - d_right; clr_l.
   apply d_big_disj_subseteq.
@@ -703,16 +703,14 @@ Proof.
 unfold offset_clauses; intros.
 ecut. apply d_later_offsets with (k:=S md), H.
 apply d_disj_elim_inline.
-- eapply d_big_disj_intro.
-  apply elem_of_list_fmap; exists (S md); split. done.
-  apply in_seq_iff; lia. unfold offset_clause.
+- d_apply_r d_big_disj_intro.
+  2: apply in_fmap_seq; done. unfold offset_clause.
   replace (S md <=? md) with false. done.
   symmetry; apply Nat.leb_gt; lia.
 - eapply d_big_disj_elim; intros r Hr.
   apply elem_of_list_fmap in Hr as (d & -> & Hd).
-  apply in_seq_iff in Hd. eapply d_big_disj_intro.
-  apply elem_of_list_fmap; exists d; split. done.
-  apply in_seq_iff; lia. unfold offset_clause.
+  apply in_seq_iff in Hd. d_apply_r d_big_disj_intro.
+  2: apply in_fmap_seq with (m:=d); lia. unfold offset_clause.
   replace (d <=? md) with true. done.
   symmetry; apply Nat.leb_le; lia.
 Qed.
@@ -758,14 +756,13 @@ Fixpoint case_context (case : list (nat * nat)) (i : nat) : nat :=
 Definition case_form md bot case :=
   ⋀ case_clauses case md bot.
 
-Definition eval_case (f : form term) (case : list (nat * nat)) :=
-  Sω_leb Infinite (eval (interp (Finite ∘ case_context case) <$> f)).
-
-Definition list_cases fv md :=
+Definition list_cases (fv : gset nat) (md : nat) :=
   let skips := seq 0 (2 + md) in
   let perms := permutations (elements fv) in
-  let cases := xs ← perms; mapM (λ i, pair i <$> skips) xs in
-  cases.
+  xs ← perms; mapM (λ i, pair i <$> skips) xs.
+
+Definition eval_case (f : form term) (case : list (nat * nat)) :=
+  Sω_leb Infinite (eval (interp (Finite ∘ case_context case) <$> f)).
 
 Definition counterexample (f : form term) :=
   find (negb ∘ eval_case f) (list_cases (FV f) (MD f)).
@@ -958,13 +955,13 @@ eapply d_big_disj_elim; intros.
 apply elem_of_list_fmap in H0 as (cs & -> & Hcs).
 apply elem_of_list_mapM in Hcs.
 apply convert_to_case_form in Hcs as (case & H1 & H2).
-eapply d_big_disj_intro.
+d_apply_l H2; apply d_big_disj_intro.
 apply elem_of_list_fmap; exists case; split. done.
 apply elem_of_list_bind; exists xs; split; [|done].
 eapply elem_of_list_mapM, Forall2_impl. apply H1.
 intros [i n] i'; intros (<- & Hn); simpl in Hn.
 apply elem_of_list_fmap; eexists; split. done.
-apply in_seq_iff; lia. apply H2.
+apply in_seq_iff; lia.
 Qed.
 
 End List_cases.
@@ -978,10 +975,11 @@ unfold eval_case, realizes;
 rewrite Sω_le_leb; done.
 Qed.
 
-Lemma counterexample_sound f case :
-  counterexample f = Some case -> ∃ Γ, ¬ realizes Γ ⊤ f.
+Theorem counterexample_sound f case :
+  counterexample f = Some case ->
+  ¬realizes (Finite ∘ case_context case) ⊤ f.
 Proof. 
-intros; eexists; rewrite <-eval_case_spec with (case:=case).
+intros; rewrite <-eval_case_spec.
 apply find_some in H as [_ <-]; simpl; destruct (eval_case _); done.
 Qed.
 
@@ -1083,12 +1081,12 @@ End Counterexample_search.
 (*
 The final result.
 *)
-Theorem deduction_complete p q :
+Corollary deduction_complete p q :
   (∀ Γ, realizes Γ p q) -> p ⊢ q.
 Proof.
 intros; apply d_impl_revert_top.
 apply counterexample_complete.
 destruct (counterexample _) eqn:E; [exfalso|done].
-apply counterexample_sound in E as [Γ HΓ]; apply HΓ.
+apply counterexample_sound in E; apply E.
 apply realizes_impl_intro_top, H.
 Qed.

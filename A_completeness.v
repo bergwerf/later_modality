@@ -1,6 +1,6 @@
 (*
-A constructive completeness proof for the later modality
-========================================================
+A Complete Proof System for the Later Modality
+==============================================
 *)
 
 Require Import Nat Compare_dec.
@@ -1081,8 +1081,7 @@ End Completeness.
 End Counterexample_search.
 
 (*
-The final result: if q always follows from p in the model,
-then there exists a deduction of the type p ⊢ q.
+The final result.
 *)
 Theorem deduction_complete p q :
   (∀ Γ, realizes Γ p q) -> p ⊢ q.

@@ -679,7 +679,7 @@ intros; apply elem_of_list_fmap; exists m; split.
 done. apply in_seq_iff; lia.
 Qed.
 
-Lemma d_later_offsets ctx p q n :
+Lemma d_offsets ctx p q n :
   ctx ⊢ p ⟹ q ->
   ctx ⊢ n*▷p ⟹ q `∨` ⋁ ((λ i, i*▷p ⟺ q) <$> seq 0 n).
 Proof.
@@ -699,7 +699,7 @@ Lemma d_offset_clauses ctx p q md :
   ctx ⊢ p ⟹ q -> ctx ⊢ ⋁ offset_clauses p q md.
 Proof.
 unfold offset_clauses; intros.
-ecut. apply d_later_offsets with (n:=S md), H.
+ecut. apply d_offsets with (n:=S md), H.
 apply d_disj_elim_inline.
 - d_apply_r d_big_disj_intro.
   2: apply in_fmap_seq; done. unfold offset_clause.
@@ -1015,7 +1015,7 @@ unfold realizes; intros ([[]|] & n & Hx & Hn & ->) H; simpl in *.
 exists n; done. all: exfalso; erewrite fmap_later, eval_later in H; done.
 Qed.
 
-Lemma case_context_realizes_case_form md bot bot_n case Γ :
+Lemma realizes_case_form md bot bot_n case Γ :
   (∀ i, i ∈ case.*1 -> Γ i = Finite (bot_n + case_context case i)) ->
   NoDup case.*1 -> eval (interp Γ <$> bot) = Finite bot_n ->
   realizes Γ ⊤ (case_form md bot case).
@@ -1032,6 +1032,14 @@ done. apply elem_of_list_here. apply realizes_conj_intro.
   intros j Hj; rewrite H. 2: apply elem_of_list_further, Hj.
   destruct (j =? i) eqn:E. apply Nat.eqb_eq in E as ->; done.
   rewrite Nat.add_assoc, Nat.add_comm with (m:=n); done. done. done.
+Qed.
+
+Lemma case_context_realizes_case_form md case :
+  NoDup case.*1 ->
+  realizes (Finite ∘ case_context case) ⊤ (case_form md ⊥ case).
+Proof.
+intro Hfv; eapply realizes_case_form; try done.
+intros i Hi; rewrite Nat.add_0_l; done.
 Qed.
 
 Lemma case_form_reduce f  case :
@@ -1053,10 +1061,10 @@ intros Hfv Heval; edestruct case_form_reduce as (a & Ha & Hf).
 apply Hfv. eapply realizes_finite_atom in Ha as [d ->].
 d_apply_l Hf; d_mp. d_hyp. clr; apply d_laters_intro.
 etrans. apply realizes_conj_intro.
-eapply case_context_realizes_case_form with (bot:=⊥)(case:=case).
-intros i Hi; rewrite Nat.add_0_l; done.
-rewrite Hfv; apply NoDup_elements. done.
-apply eval_case_spec, Heval. apply deduction_sound.
+eapply case_context_realizes_case_form.
+rewrite Hfv; apply NoDup_elements.
+apply eval_case_spec, Heval.
+apply deduction_sound.
 d_revert; d_apply_l Hf; d_hyp.
 Qed.
 

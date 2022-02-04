@@ -1,5 +1,5 @@
 # Logic of delay
 -R . local
 
-A_completeness.v
-B_addendum.v
+completeness.v
+addendum.v

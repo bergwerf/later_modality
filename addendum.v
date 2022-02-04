@@ -3,8 +3,8 @@ Additional material
 ===================
 *)
 
-From local Require Import A_completeness.
 From stdpp Require Import list.
+From local Require Import completeness.
 
 (*
 This is a variant of f_big that produces a pretty formula: the default formula

@@ -109,7 +109,7 @@ Notation "⊥" := (f_Term (t_Const false)).
 Notation "$ x" := (f_Term x) (at level 40, format "$ x").
 Notation "# i" := (f_Term (t_Var i)) (at level 40, format "# i").
 Notation "▷ p" := (f_Later p) (at level 49, right associativity, format "▷ p").
-Notation "n *▷ p" := (f_later n p) (at level 50).
+Notation "n *▷ p" := (f_later n p) (at level 50, format "n *▷ p").
 Notation "p `∧` q" := (f_Conn Conj p q) (at level 56, left associativity).
 Notation "p `∨` q" := (f_Conn Disj p q) (at level 56, left associativity).
 Notation "p ⟹ q" := (f_Conn Impl p q) (at level 54, right associativity).
@@ -340,7 +340,7 @@ d_revert; done.
 Qed.
 
 Lemma d_impl_laters m n p q :
-  m ≤ n -> p ⟹ q ⊢ m *▷ p ⟹ n *▷ q.
+  m ≤ n -> p ⟹ q ⊢ m*▷p ⟹ n*▷q.
 Proof.
 intro H; induction H.
 induction m; simpl; intros. done. d_apply_r d_impl_later; done.
@@ -348,33 +348,33 @@ d_intro; simpl; d_apply_r d_later_intro; d_revert; done.
 Qed.
 
 Lemma d_iff_laters n p q :
-  p ⟺ q ⊢ n *▷ p ⟺ n *▷ q.
+  p ⟺ q ⊢ n*▷p ⟺ n*▷q.
 Proof.
 d_split; d_apply_r d_impl_laters; d_hyp.
 Qed.
 
 Lemma d_laters_le m n p :
-  m ≤ n -> m *▷ p ⊢ n *▷ p.
+  m ≤ n -> m*▷p ⊢ n*▷p.
 Proof.
 intro H; induction H; simpl. done.
 d_apply_r d_later_intro; apply IHle.
 Qed.
 
 Lemma d_laters_intro n p :
-  p ⊢ n *▷ p.
+  p ⊢ n*▷p.
 Proof.
 induction n; simpl. done.
 d_apply_r d_later_intro; done.
 Qed.
 
 Lemma laters_S n p :
-  ▷(n *▷ p) = S n *▷ p.
+  ▷(n*▷p) = S n*▷p.
 Proof.
 done.
 Qed.
 
 Lemma laters_add m n p :
-  (m + n) *▷ p = m *▷ (n *▷ p).
+  (m + n)*▷p = m*▷(n*▷p).
 Proof.
 induction m; simpl; congruence.
 Qed.
@@ -430,17 +430,15 @@ Definition interp (Γ : nat -> Sω) (x : term) :=
 
 Fixpoint eval (f : form Sω) :=
   match f with
-  | f_Term x => x
-  | f_Later p => Sω_succ (eval p)
-  | f_Conn Conj p q => Sω_min (eval p) (eval q)
-  | f_Conn Disj p q => Sω_max (eval p) (eval q)
-  | f_Conn Impl p q =>
-    if Sω_leb (eval p) (eval q)
-    then Infinite else eval q
+  | ($x) => x
+  | (▷p) => Sω_succ (eval p)
+  | (p `∧` q) => Sω_min (eval p) (eval q)
+  | (p `∨` q) => Sω_max (eval p) (eval q)
+  | (p ⟹ q) => if Sω_leb (eval p) (eval q) then Infinite else eval q
   end.
 
-Definition realizes Γ p q :=
-  (Sω_le (eval (interp Γ <$> p)) (eval (interp Γ <$> q))).
+Definition realizes (Γ : nat -> Sω) (p q : form term) :=
+  Sω_le (eval (interp Γ <$> p)) (eval (interp Γ <$> q)).
 
 Global Instance Sω_le_pre_order :
   PreOrder Sω_le.
@@ -502,7 +500,7 @@ Qed.
 End Reference_model.
 
 (*
-We replace formulas with a term of the form `n *▷ $x`.
+We replace formulas with a term of the form `n*▷$x`.
 *)
 Section Symbolic_evaluation.
 
@@ -515,7 +513,7 @@ Definition bounded_term `{ElemOf nat X} (range : X) x :=
 Implicit Types fv : gset nat.
 
 Definition atom fv md a := ∃ x n,
-  bounded_term fv x /\ n ≤ md /\ a = n *▷ $x.
+  bounded_term fv x /\ n ≤ md /\ a = n*▷$x.
 
 Lemma atom_const fv md b :
   atom fv md ($t_Const b).
@@ -651,7 +649,7 @@ d_apply_r d_big_disj_subseteq. apply d_interleave with (x:=x).
 apply subseteq_fmap, subseteq_mbind, H.
 Qed.
 
-Theorem d_permutations xs :
+Theorem d_permutations (xs : list nat) :
   ⊢ ⋁ (perm_form <$> permutations xs).
 Proof.
 induction xs as [|x xs]; simpl. d_left; constructor.
@@ -666,7 +664,7 @@ We obtain a disjunction with some different offsets between propositions.
 Section Offset_deduction.
 
 Definition offset_clause md (p q : form term) n :=
-  if n <=? md then n *▷ p ⟺ q else n *▷ p ⟹ q.
+  if n <=? md then n*▷p ⟺ q else n*▷p ⟹ q.
 
 Definition offset_clauses p q md :=
   offset_clause md p q <$> seq 0 (2 + md).
@@ -681,13 +679,13 @@ intros; apply elem_of_list_fmap; exists m; split.
 done. apply in_seq_iff; lia.
 Qed.
 
-Lemma d_later_offsets c p q k :
-  c ⊢ p ⟹ q -> c ⊢ k *▷ p ⟹ q `∨`
-    ⋁ ((λ n, n *▷ p ⟺ q) <$> seq 0 k).
+Lemma d_later_offsets ctx p q n :
+  ctx ⊢ p ⟹ q ->
+  ctx ⊢ n*▷p ⟹ q `∨` ⋁ ((λ i, i*▷p ⟺ q) <$> seq 0 n).
 Proof.
-intros; induction k. d_left; done.
-eapply d_disj_elim. apply IHk.
-eapply d_disj_elim. clr; apply (d_compare q (k *▷ p)).
+intros; induction n. d_left; done.
+eapply d_disj_elim. apply IHn.
+eapply d_disj_elim. clr; apply (d_compare q (n*▷p)).
 - d_right; d_apply_r d_big_disj_intro.
   2: apply in_fmap_seq; done. d_split; d_hyp.
 - d_left; d_hyp.
@@ -697,11 +695,11 @@ eapply d_disj_elim. clr; apply (d_compare q (k *▷ p)).
   rewrite ?in_seq_iff; lia.
 Qed.
 
-Lemma d_offset_clauses c p q md :
-  c ⊢ p ⟹ q -> c ⊢ ⋁ offset_clauses p q md.
+Lemma d_offset_clauses ctx p q md :
+  ctx ⊢ p ⟹ q -> ctx ⊢ ⋁ offset_clauses p q md.
 Proof.
 unfold offset_clauses; intros.
-ecut. apply d_later_offsets with (k:=S md), H.
+ecut. apply d_later_offsets with (n:=S md), H.
 apply d_disj_elim_inline.
 - d_apply_r d_big_disj_intro.
   2: apply in_fmap_seq; done. unfold offset_clause.
@@ -778,15 +776,15 @@ Proof. done. Qed.
 Section Case_form_exhaustive.
 
 Lemma offset_clause_weaken md p q n :
-  offset_clause md p q n ⊢ n *▷ p ⟹ q.
+  offset_clause md p q n ⊢ n*▷p ⟹ q.
 Proof.
 unfold offset_clause; destruct (_ <=? _); d_hyp.
 Qed.
 
 Lemma case_form_exhaustive_bot_var case md bot p :
   p ∈ case.*1 ->
-  case_form md bot case ⊢ S md *▷ bot ⟹ #p \/ ∃ n,
-  case_form md bot case ⊢ n *▷ bot ⟺ #p.
+  case_form md bot case ⊢ S md*▷bot ⟹ #p \/ ∃ n,
+  case_form md bot case ⊢ n*▷bot ⟺ #p.
 Proof.
 unfold case_form; intros Hp; revert bot.
 induction case as [|[r k] case]; simpl; intros.
@@ -818,10 +816,10 @@ Qed.
 
 Lemma case_form_exhaustive_var_var case md bot p q :
   p ∈ case.*1 -> q ∈ case.*1 ->
-  case_form md bot case ⊢ S md *▷ #p ⟹ #q \/
-  case_form md bot case ⊢ S md *▷ #q ⟹ #p \/
-  (∃ n, case_form md bot case ⊢ n *▷ #p ⟺ #q) \/
-  (∃ n, case_form md bot case ⊢ n *▷ #q ⟺ #p).
+  case_form md bot case ⊢ S md*▷#p ⟹ #q \/
+  case_form md bot case ⊢ S md*▷#q ⟹ #p \/
+  (∃ n, case_form md bot case ⊢ n*▷#p ⟺ #q) \/
+  (∃ n, case_form md bot case ⊢ n*▷#q ⟺ #p).
 Proof.
 unfold case_form; intros Hp Hq; revert bot.
 induction case as [|[r k] case]; simpl; intros. apply elem_of_nil in Hp; done.
@@ -845,9 +843,9 @@ Qed.
 
 Lemma case_form_exhaustive_const_term case md b x :
   bounded_term case.*1 x ->
-  case_form md ⊥ case ⊢ S md *▷ $x ⟹ $t_Const b \/
-  case_form md ⊥ case ⊢ S md *▷ $t_Const b ⟹ $x \/
-  (∃ n, case_form md ⊥ case ⊢ n *▷ $t_Const b ⟺ $x).
+  case_form md ⊥ case ⊢ S md*▷$x ⟹ $t_Const b \/
+  case_form md ⊥ case ⊢ S md*▷$t_Const b ⟹ $x \/
+  (∃ n, case_form md ⊥ case ⊢ n*▷$t_Const b ⟺ $x).
 Proof.
 intros; destruct b. left; d_intro; clr; done.
 destruct x. destruct b. right; left; d_intro; clr; done.
@@ -859,10 +857,10 @@ Qed.
 Lemma case_form_exhaustive_term_term case md x y :
   bounded_term case.*1 x ->
   bounded_term case.*1 y ->
-  case_form md ⊥ case ⊢ S md *▷ $x ⟹ $y \/
-  case_form md ⊥ case ⊢ S md *▷ $y ⟹ $x \/
-  (∃ n, case_form md ⊥ case ⊢ n *▷ $x ⟺ $y) \/
-  (∃ n, case_form md ⊥ case ⊢ n *▷ $y ⟺ $x).
+  case_form md ⊥ case ⊢ S md*▷$x ⟹ $y \/
+  case_form md ⊥ case ⊢ S md*▷$y ⟹ $x \/
+  (∃ n, case_form md ⊥ case ⊢ n*▷$x ⟺ $y) \/
+  (∃ n, case_form md ⊥ case ⊢ n*▷$y ⟺ $x).
 Proof.
 intros; destruct x.
 edestruct case_form_exhaustive_const_term.
@@ -988,14 +986,14 @@ End Soundness.
 Section Completeness.
 
 Lemma fmap_later {X Y} (t : X -> Y) n (f : form X) :
-  t <$> (n *▷ f) = n *▷ (t <$> f).
+  t <$> (n*▷f) = n*▷(t <$> f).
 Proof.
 induction n; simpl. done.
 rewrite <-IHn; done.
 Qed.
 
 Lemma eval_later n f i :
-  eval f = Finite i -> eval (n *▷ f) = Finite (n + i).
+  eval f = Finite i -> eval (n*▷f) = Finite (n + i).
 Proof.
 induction n; simpl; intros.
 done. rewrite IHn; done.
@@ -1004,14 +1002,14 @@ Qed.
 Lemma realizes_later_iff Γ p q i n :
   eval (interp Γ <$> p) = Finite i ->
   eval (interp Γ <$> q) = Finite (n + i) ->
-  realizes Γ ⊤ (n *▷ p ⟹ q) /\ realizes Γ ⊤ (q ⟹ n *▷ p).
+  realizes Γ ⊤ (n*▷p ⟹ q) /\ realizes Γ ⊤ (q ⟹ n*▷p).
 Proof.
 intros Hp Hq; split; apply realizes_impl_intro_top;
 unfold realizes; erewrite fmap_later, eval_later, Hq; done.
 Qed.
 
 Lemma realizes_finite_atom Γ fv md a :
-  atom fv md a -> realizes (Finite ∘ Γ) ⊤ a -> ∃ n, a = n *▷ ⊤.
+  atom fv md a -> realizes (Finite ∘ Γ) ⊤ a -> ∃ n, a = n*▷⊤.
 Proof.
 unfold realizes; intros ([[]|] & n & Hx & Hn & ->) H; simpl in *.
 exists n; done. all: exfalso; erewrite fmap_later, eval_later in H; done.

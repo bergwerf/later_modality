@@ -134,24 +134,24 @@ Reserved Notation "p ⊢ q" (at level 70).
 Reserved Notation "⊢ q" (at level 70).
 
 Inductive deduction : form term -> form term -> Prop :=
-  | d_refl p             : p ⊢ p
-  | d_trans p q r        : p ⊢ q -> q ⊢ r -> p ⊢ r
-  | d_true_intro p       : p ⊢ ⊤
-  | d_false_elim p       : ⊥ ⊢ p
-  | d_conj_intro c p q   : c ⊢ p -> c ⊢ q -> c ⊢ p `∧` q
-  | d_conj_elim_l p q    : p `∧` q ⊢ p
-  | d_conj_elim_r p q    : p `∧` q ⊢ q
-  | d_disj_intro_l p q   : p ⊢ p `∨` q
-  | d_disj_intro_r p q   : q ⊢ p `∨` q
-  | d_disj_elim c p q r  : c ⊢ p `∨` q -> c `∧` p ⊢ r -> c `∧` q ⊢ r -> c ⊢ r
-  | d_impl_intro c p q   : c `∧` p ⊢ q -> c ⊢ p ⟹ q
-  | d_impl_elim c p q    : c ⊢ p ⟹ q -> c ⊢ p -> c ⊢ q
-  | d_later_intro p      : p ⊢ ▷p
-  | d_later_elim p       : ⊢ ▷p -> ⊢ p
-  | d_later_fix p        : ▷p ⊢ p -> ⊢ p
-  | d_later_mono p q     : p ⊢ q -> ▷p ⊢ ▷q
-  | d_later_conj p q     : ▷p `∧` ▷q ⊢ ▷(p `∧` q)
-  | d_compare p q        : ⊢ p ⟹ q `∨` ▷q ⟹ p
+  | d_refl p           : p ⊢ p
+  | d_trans p q r      : p ⊢ q -> q ⊢ r -> p ⊢ r
+  | d_true_intro p     : p ⊢ ⊤
+  | d_false_elim p     : ⊥ ⊢ p
+  | d_conj_intro c p q : c ⊢ p -> c ⊢ q -> c ⊢ p `∧` q
+  | d_conj_elim_l p q  : p `∧` q ⊢ p
+  | d_conj_elim_r p q  : p `∧` q ⊢ q
+  | d_disj_intro_l p q : p ⊢ p `∨` q
+  | d_disj_intro_r p q : q ⊢ p `∨` q
+  | d_disj_elim p q r  : p ⊢ r -> q ⊢ r -> p `∨` q ⊢ r
+  | d_impl_intro c p q : c `∧` p ⊢ q -> c ⊢ p ⟹ q
+  | d_impl_elim c p q  : c ⊢ p ⟹ q -> c ⊢ p -> c ⊢ q
+  | d_later_intro p    : p ⊢ ▷p
+  | d_later_elim p     : ⊢ ▷p -> ⊢ p
+  | d_later_fix p      : ▷p ⊢ p -> ⊢ p
+  | d_later_mono p q   : p ⊢ q -> ▷p ⊢ ▷q
+  | d_later_conj p q   : ▷p `∧` ▷q ⊢ ▷(p `∧` q)
+  | d_compare p q      : ⊢ p ⟹ q `∨` ▷q ⟹ p
 where "p ⊢ q" := (deduction p q) and "⊢ q" := (⊤ ⊢ q).
 Notation "p ⊣⊢ q" := (p ⊢ q /\ q ⊢ p) (at level 71).
 
@@ -223,11 +223,12 @@ Qed.
 Lemma d_later_impl p q :
   ▷p ⟹ ▷q ⊢ ▷(p ⟹ q).
 Proof.
-eapply d_disj_elim.
-clr; apply d_compare with (p:=p)(q:=q).
-d_apply_r d_later_intro; d_hyp. cut (▷q). d_mp. d_hyp.
+d_revert; d_apply_r d_disj_elim.
+apply d_compare with (p:=p)(q:=q).
+d_intro; d_apply_r d_later_intro; d_hyp.
+d_intro; cut (▷q). d_mp. d_hyp.
 d_apply_r d_later_intro; d_apply_r d_strong_fix.
-d_intro; d_mp; [d_hyp|]; d_mp; d_hyp.
+d_intro. d_mp. d_hyp. d_mp; d_hyp.
 apply d_later_mono; d_intro; d_hyp.
 Qed.
 
@@ -241,17 +242,10 @@ Qed.
 Lemma d_compare_weak p q :
   ⊢ p ⟹ q `∨` q ⟹ p.
 Proof.
-eapply d_disj_elim.
-clr; apply d_compare with (p:=p)(q:=q).
+d_apply_r d_disj_elim.
+apply d_compare with (p:=p)(q:=q).
 d_left; d_hyp. d_right; d_intro; d_mp.
 d_hyp. d_apply_r d_later_intro; d_hyp.
-Qed.
-
-Lemma d_disj_elim_inline p q r :
-  p ⊢ r -> q ⊢ r -> p `∨` q ⊢ r.
-Proof.
-intros; eapply d_disj_elim. done.
-all: clr_l; done.
 Qed.
 
 Lemma d_big_conj_intro c ps :
@@ -282,7 +276,7 @@ Lemma d_big_disj_elim ps q :
   (∀ p, p ∈ ps -> p ⊢ q) -> ⋁ ps ⊢ q.
 Proof.
 induction ps; simpl; intros. constructor.
-eapply d_disj_elim. done. all: clr_l.
+apply d_disj_elim.
 apply H; left; done.
 apply IHps; intros.
 apply H; right; done.
@@ -579,7 +573,7 @@ all: split. 1,3,5,7,11: eapply atom_weaken; [eassumption|set_solver|lia].
 5: apply atom_const. all: d_split; d_intro.
 2,4: d_split; [d_subst_r Ha|d_subst_r Hb]; try d_hyp; d_subst_r H; d_hyp.
 d_subst_r Ha; d_hyp. d_subst_r Hb; d_hyp.
-1,3: eapply d_disj_elim; [d_hyp|idtac|idtac].
+1,3: d_comm; d_revert; apply d_disj_elim; d_intro.
 d_subst_r H; d_subst_r Ha; d_hyp. d_subst_r Hb; d_hyp.
 d_subst_r Ha; d_hyp. d_subst_r H; d_subst_r Hb; d_hyp. 
 d_right; d_subst_r Hb; d_hyp. d_left; d_subst_r Ha; d_hyp.
@@ -619,11 +613,13 @@ Proof.
 induction xs as [|y zs].
 unfold perm_form; simpl. d_left; constructor.
 simpl interleave; rewrite fmap_cons; simpl.
-eapply d_disj_elim; [|d_left; clear IHzs|d_right].
-clr; apply d_compare_weak with (p:=#x)(q:=#y).
-rewrite perm_form_unfold; apply d_conj_comm.
+d_revert; d_apply_r d_disj_elim.
+apply d_compare_weak with (p:=#x)(q:=#y).
+d_intro; d_left.
+rewrite perm_form_unfold; done.
 (* interleave x into the tail. *)
-d_revert; d_apply_l d_conj_intro.
+d_intro; d_right.
+d_comm; d_revert; d_apply_l d_conj_intro.
 apply d_perm_form_tl. done. d_revert.
 d_apply_l IHzs. apply d_big_disj_elim; intros; d_intro; d_intro.
 apply elem_of_list_fmap in H as (zs' & -> & H).
@@ -684,13 +680,13 @@ Lemma d_offsets ctx p q n :
   ctx ⊢ n*▷p ⟹ q `∨` ⋁ ((λ i, i*▷p ⟺ q) <$> seq 0 n).
 Proof.
 intros; induction n. d_left; done.
-eapply d_disj_elim. apply IHn.
-eapply d_disj_elim. clr; apply (d_compare q (n*▷p)).
-- d_right; d_apply_r d_big_disj_intro.
+d_apply_l IHn; apply d_disj_elim.
+d_revert; d_apply_r d_disj_elim.
+apply (d_compare q (n*▷p)).
+- d_intro; d_right; d_apply_r d_big_disj_intro.
   2: apply in_fmap_seq; done. d_split; d_hyp.
-- d_left; d_hyp.
-- d_right; clr_l.
-  apply d_big_disj_subseteq.
+- d_intro; d_left; d_hyp.
+- d_right; apply d_big_disj_subseteq.
   apply subseteq_fmap; intros i.
   rewrite ?in_seq_iff; lia.
 Qed.
@@ -700,7 +696,7 @@ Lemma d_offset_clauses ctx p q md :
 Proof.
 unfold offset_clauses; intros.
 ecut. apply d_offsets with (n:=S md), H.
-apply d_disj_elim_inline.
+apply d_disj_elim.
 - d_apply_r d_big_disj_intro.
   2: apply in_fmap_seq; done. unfold offset_clause.
   replace (S md <=? md) with false. done.

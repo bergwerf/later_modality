@@ -422,7 +422,7 @@ Definition interp (Γ : nat -> Sω) (x : term) :=
   | t_Var i => Γ i
   end.
 
-Fixpoint eval (f : form Sω) :=
+Fixpoint eval (f : form Sω) : Sω :=
   match f with
   | ($x) => x
   | (▷p) => Sω_succ (eval p)
@@ -431,7 +431,7 @@ Fixpoint eval (f : form Sω) :=
   | (p ⟹ q) => if Sω_leb (eval p) (eval q) then Infinite else eval q
   end.
 
-Definition realizes (Γ : nat -> Sω) (p q : form term) :=
+Definition realizes (Γ : nat -> Sω) (p q : form term) : Prop :=
   Sω_le (eval (interp Γ <$> p)) (eval (interp Γ <$> q)).
 
 Global Instance Sω_le_pre_order :
@@ -750,15 +750,15 @@ Fixpoint case_context (case : list (nat * nat)) (i : nat) : nat :=
 Definition case_form md bot case :=
   ⋀ case_clauses case md bot.
 
-Definition list_cases (fv : gset nat) (md : nat) :=
+Definition list_cases (fv : gset nat) (md : nat) : list (list (nat * nat)) :=
   let skips := seq 0 (2 + md) in
   let perms := permutations (elements fv) in
   xs ← perms; mapM (λ i, pair i <$> skips) xs.
 
-Definition eval_case (f : form term) (case : list (nat * nat)) :=
+Definition eval_case (f : form term) (case : list (nat * nat)) : bool :=
   Sω_leb Infinite (eval (interp (Finite ∘ case_context case) <$> f)).
 
-Definition counterexample (f : form term) :=
+Definition counterexample (f : form term) : option (list (nat * nat)) :=
   find (negb ∘ eval_case f) (list_cases (FV f) (MD f)).
 
 Example not_strong_later_inj :

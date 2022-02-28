@@ -1080,15 +1080,19 @@ End Completeness.
 
 End Counterexample_search.
 
-(*
-The final result.
-*)
+Theorem deduction_decidable p q :
+  { p ⊢ q } + { ∃ Γ, ¬ realizes Γ p q }.
+Proof.
+destruct (counterexample (p ⟹ q)) as [case|] eqn:E.
+- right; eexists. intros H; apply realizes_impl_intro_top in H.
+  eapply counterexample_sound. apply E. apply H.
+- left; apply d_impl_revert_top.
+  apply counterexample_complete, E.
+Qed.
+
 Corollary deduction_complete p q :
   (∀ Γ, realizes Γ p q) -> p ⊢ q.
 Proof.
-intros; apply d_impl_revert_top.
-apply counterexample_complete.
-destruct (counterexample _) eqn:E; [exfalso|done].
-apply counterexample_sound in E; apply E.
-apply realizes_impl_intro_top, H.
+intros; edestruct deduction_decidable as [D|[Γ C]].
+apply D. exfalso; apply C, H.
 Qed.

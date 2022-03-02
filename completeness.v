@@ -1065,7 +1065,7 @@ d_revert; d_apply_l Hf; d_hyp.
 Qed.
 
 Theorem counterexample_complete f :
-  counterexample f = None -> ⊢ f.
+  counterexample f = None -> ⊤ ⊢ f.
 Proof.
 unfold counterexample; intros. ecut.
 apply d_list_cases with (fv:=FV f)(md:=MD f).

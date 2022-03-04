@@ -741,10 +741,10 @@ Fixpoint case_clauses (case : list (nat * nat)) (md : nat) (bot : form term) :=
     case_clauses case' md (#i)
   end.
 
-Fixpoint case_context (case : list (nat * nat)) (i : nat) : nat :=
+Fixpoint case_val (case : list (nat * nat)) (i : nat) : nat :=
   match case with
   | [] => 0
-  | (j, n) :: case' => n + if i =? j then 0 else case_context case' i
+  | (j, n) :: case' => n + if i =? j then 0 else case_val case' i
   end.
 
 Definition case_form md bot case :=
@@ -756,7 +756,7 @@ Definition list_cases (fv : gset nat) (md : nat) : list (list (nat * nat)) :=
   xs ← perms; mapM (λ i, pair i <$> skips) xs.
 
 Definition eval_case (f : form term) (case : list (nat * nat)) : bool :=
-  Sω_leb Infinite (eval (interp (Finite ∘ case_context case) <$> f)).
+  Sω_leb Infinite (eval (interp (Finite ∘ case_val case) <$> f)).
 
 Definition counterexample (f : form term) : option (list (nat * nat)) :=
   find (negb ∘ eval_case f) (list_cases (FV f) (MD f)).
@@ -963,7 +963,7 @@ End List_cases.
 Section Soundness.
 
 Lemma eval_case_spec f case :
-  eval_case f case = true <-> realizes (Finite ∘ case_context case) ⊤ f.
+  eval_case f case = true <-> realizes (Finite ∘ case_val case) ⊤ f.
 Proof.
 unfold eval_case, realizes;
 rewrite Sω_le_leb; done.
@@ -971,7 +971,7 @@ Qed.
 
 Theorem counterexample_sound f case :
   counterexample f = Some case ->
-  ¬realizes (Finite ∘ case_context case) ⊤ f.
+  ¬realizes (Finite ∘ case_val case) ⊤ f.
 Proof. 
 intros; rewrite <-eval_case_spec.
 apply find_some in H as [_ <-]; simpl; destruct (eval_case _); done.
@@ -1012,7 +1012,7 @@ exists n; done. all: exfalso; erewrite fmap_later, eval_later in H; done.
 Qed.
 
 Lemma realizes_case_form md bot bot_n case Γ :
-  (∀ i, i ∈ case.*1 -> Γ i = Finite (bot_n + case_context case i)) ->
+  (∀ i, i ∈ case.*1 -> Γ i = Finite (bot_n + case_val case i)) ->
   NoDup case.*1 -> eval (interp Γ <$> bot) = Finite bot_n ->
   realizes Γ ⊤ (case_form md bot case).
 Proof.
@@ -1030,9 +1030,9 @@ done. apply elem_of_list_here. apply realizes_conj_intro.
   rewrite Nat.add_assoc, Nat.add_comm with (m:=n); done. done. done.
 Qed.
 
-Lemma case_context_realizes_case_form md case :
+Lemma case_val_realizes_case_form md case :
   NoDup case.*1 ->
-  realizes (Finite ∘ case_context case) ⊤ (case_form md ⊥ case).
+  realizes (Finite ∘ case_val case) ⊤ (case_form md ⊥ case).
 Proof.
 intro Hfv; eapply realizes_case_form; try done.
 intros i Hi; rewrite Nat.add_0_l; done.
@@ -1057,7 +1057,7 @@ intros Hfv Heval; edestruct case_form_reduce as (a & Ha & Hf).
 apply Hfv. eapply realizes_finite_atom in Ha as [d ->].
 d_apply_l Hf; d_mp. d_hyp. clr; apply d_laters_intro.
 etrans. apply realizes_conj_intro.
-eapply case_context_realizes_case_form.
+eapply case_val_realizes_case_form.
 rewrite Hfv; apply NoDup_elements.
 apply eval_case_spec, Heval.
 apply deduction_sound.

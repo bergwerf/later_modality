@@ -1,6 +1,7 @@
-(*
+(***
 A Complete Proof System for the Later Modality
 ==============================================
+Author: Herman Bergwerf
 *)
 
 Require Import Nat Compare_dec.

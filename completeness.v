@@ -2,6 +2,7 @@
 A Complete Proof System for the Later Modality
 ==============================================
 Author: Herman Bergwerf
+DOI: 10.5281/zenodo.6340500
 *)
 
 Require Import Nat Compare_dec.

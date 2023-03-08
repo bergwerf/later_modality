@@ -32,7 +32,7 @@ rewrite IHxs; done.
 Qed.
 
 Lemma in_seq_iff start n len :
-  n ∈ seq start len <-> start ≤ n < start + len.
+  n ∈ seq start len ↔ start ≤ n < start + len.
 Proof.
 rewrite elem_of_list_In; apply in_seq.
 Qed.
@@ -51,7 +51,7 @@ apply elem_of_list_fmap; exists x; auto.
 Qed.
 
 Lemma elem_of_list_mapM {X Y} xs ys (f : X -> list Y) :
-  ys ∈ mapM f xs <-> Forall2 (λ y x, y ∈ f x) ys xs.
+  ys ∈ mapM f xs ↔ Forall2 (λ y x, y ∈ f x) ys xs.
 Proof.
 revert ys; induction xs; simpl; intro ys; split; intro H.
 - apply elem_of_list_ret in H as ->; apply Forall2_nil; done.
@@ -155,7 +155,7 @@ Inductive deduction : form term -> form term -> Prop :=
   | d_later_conj p q   : ▷p `∧` ▷q ⊢ ▷(p `∧` q)
   | d_compare p q      : ⊢ p ⟹ q `∨` ▷q ⟹ p
 where "p ⊢ q" := (deduction p q) and "⊢ q" := (⊤ ⊢ q).
-Notation "p ⊣⊢ q" := (p ⊢ q /\ q ⊢ p) (at level 71).
+Notation "p ⊣⊢ q" := (p ⊢ q ∧ q ⊢ p) (at level 71).
 
 Ltac inv H := inversion H; subst; clear H.
 Ltac cut x := transitivity x.
@@ -451,14 +451,14 @@ intros p q r; intros; etrans; done.
 Qed.
 
 Lemma Sω_le_leb p q :
-  Sω_le p q <-> Sω_leb p q = true.
+  Sω_le p q ↔ Sω_leb p q = true.
 Proof.
 destruct p, q; simpl; try done.
 split; apply Nat.leb_le.
 Qed.
 
 Lemma Sω_le_cases p q :
-  Sω_le p q \/ Sω_le (Sω_succ q) p.
+  Sω_le p q ∨ Sω_le (Sω_succ q) p.
 Proof.
 destruct p, q; simpl; auto; lia.
 Qed.
@@ -509,7 +509,7 @@ Definition bounded_term `{ElemOf nat X} (range : X) x :=
 Implicit Types fv : gset nat.
 
 Definition atom fv md a := ∃ x n,
-  bounded_term fv x /\ n ≤ md /\ a = n*▷$x.
+  bounded_term fv x ∧ n ≤ md ∧ a = n*▷$x.
 
 Lemma atom_const fv md b :
   atom fv md ($t_Const b).
@@ -537,7 +537,7 @@ Variable md : nat.
 
 Hypothesis exhaustive : ∀ a b,
   atom fv md a -> atom fv md b ->
-  ctx ⊢ a ⟹ b \/ ctx ⊢ ▷b ⟹ a.
+  ctx ⊢ a ⟹ b ∨ ctx ⊢ ▷b ⟹ a.
 
 Ltac d_apply_r_lift_iff H :=
   (d_apply_r d_conj_elim_l; d_apply_r H) ||
@@ -547,7 +547,7 @@ Ltac d_subst_r H := d_mp; [(d_apply_r H || d_apply_r_lift_iff H); d_hyp|].
 
 Local Lemma exhaustive_weak a b :
   atom fv md a -> atom fv md b ->
-  ctx ⊢ a ⟹ b \/ ctx ⊢ b ⟹ a.
+  ctx ⊢ a ⟹ b ∨ ctx ⊢ b ⟹ a.
 Proof.
 intros; destruct (exhaustive a b); try done. left; done.
 right; d_intro; d_subst_r H1; d_apply_r d_later_intro; d_hyp.
@@ -555,7 +555,7 @@ Qed.
 
 Theorem d_reduce_to_atom f :
   FV f ⊆ fv -> MD f ≤ md ->
-  ∃ a, atom (FV f) (MD f) a /\ ctx ⊢ f ⟺ a.
+  ∃ a, atom (FV f) (MD f) a ∧ ctx ⊢ f ⟺ a.
 Proof.
 induction f as [[]|p|[] p IHp q IHq]; simpl; intros Hfv Hmd.
 3-6: destruct IHp as (a & Aa & Ha); try lia. 3,5,7,9: set_solver.
@@ -781,7 +781,7 @@ Qed.
 
 Lemma case_form_exhaustive_bot_var case md bot p :
   p ∈ case.*1 ->
-  case_form md bot case ⊢ S md*▷bot ⟹ #p \/ ∃ n,
+  case_form md bot case ⊢ S md*▷bot ⟹ #p ∨ ∃ n,
   case_form md bot case ⊢ n*▷bot ⟺ #p.
 Proof.
 unfold case_form; intros Hp; revert bot.
@@ -814,9 +814,9 @@ Qed.
 
 Lemma case_form_exhaustive_var_var case md bot p q :
   p ∈ case.*1 -> q ∈ case.*1 ->
-  case_form md bot case ⊢ S md*▷#p ⟹ #q \/
-  case_form md bot case ⊢ S md*▷#q ⟹ #p \/
-  (∃ n, case_form md bot case ⊢ n*▷#p ⟺ #q) \/
+  case_form md bot case ⊢ S md*▷#p ⟹ #q ∨
+  case_form md bot case ⊢ S md*▷#q ⟹ #p ∨
+  (∃ n, case_form md bot case ⊢ n*▷#p ⟺ #q) ∨
   (∃ n, case_form md bot case ⊢ n*▷#q ⟺ #p).
 Proof.
 unfold case_form; intros Hp Hq; revert bot.
@@ -841,8 +841,8 @@ Qed.
 
 Lemma case_form_exhaustive_const_term case md b x :
   bounded_term case.*1 x ->
-  case_form md ⊥ case ⊢ S md*▷$x ⟹ $t_Const b \/
-  case_form md ⊥ case ⊢ S md*▷$t_Const b ⟹ $x \/
+  case_form md ⊥ case ⊢ S md*▷$x ⟹ $t_Const b ∨
+  case_form md ⊥ case ⊢ S md*▷$t_Const b ⟹ $x ∨
   (∃ n, case_form md ⊥ case ⊢ n*▷$t_Const b ⟺ $x).
 Proof.
 intros; destruct b. left; d_intro; clr; done.
@@ -855,9 +855,9 @@ Qed.
 Lemma case_form_exhaustive_term_term case md x y :
   bounded_term case.*1 x ->
   bounded_term case.*1 y ->
-  case_form md ⊥ case ⊢ S md*▷$x ⟹ $y \/
-  case_form md ⊥ case ⊢ S md*▷$y ⟹ $x \/
-  (∃ n, case_form md ⊥ case ⊢ n*▷$x ⟺ $y) \/
+  case_form md ⊥ case ⊢ S md*▷$x ⟹ $y ∨
+  case_form md ⊥ case ⊢ S md*▷$y ⟹ $x ∨
+  (∃ n, case_form md ⊥ case ⊢ n*▷$x ⟺ $y) ∨
   (∃ n, case_form md ⊥ case ⊢ n*▷$y ⟺ $x).
 Proof.
 intros; destruct x.
@@ -878,7 +878,7 @@ Qed.
 Lemma case_form_exhaustive fv md case a b :
   case.*1 ≡ₚ elements fv ->
   atom fv md a -> atom fv md b ->
-  case_form md ⊥ case ⊢ a ⟹ b \/ case_form md ⊥ case ⊢ ▷b ⟹ a.
+  case_form md ⊥ case ⊢ a ⟹ b ∨ case_form md ⊥ case ⊢ ▷b ⟹ a.
 Proof.
 intros Hrange (x & m & Hx & Hm & ->) (y & n & Hy & Hn & ->).
 rewrite laters_S; edestruct case_form_exhaustive_term_term
@@ -923,7 +923,7 @@ Qed.
 Lemma convert_to_case_form md bot cs xs :
   Forall2 (λ c p, c ∈ offset_clauses ($p.1) ($p.2) md)
     cs (adj (bot :: (t_Var <$> xs))) ->
-  ∃ case, Forall2 (λ c i, c.1 = i /\ c.2 ≤ S md) case xs /\
+  ∃ case, Forall2 (λ c i, c.1 = i ∧ c.2 ≤ S md) case xs ∧
     ⋀ cs ⊢ case_form md ($bot) case.
 Proof.
 unfold case_form; revert bot cs; induction xs as [|i xs]; intros.
@@ -965,7 +965,7 @@ End List_cases.
 Section Soundness.
 
 Lemma eval_case_spec f case :
-  eval_case f case = true <-> realizes (Finite ∘ case_val case) ⊤ f.
+  eval_case f case = true ↔ realizes (Finite ∘ case_val case) ⊤ f.
 Proof.
 unfold eval_case, realizes;
 rewrite Sω_le_leb; done.
@@ -1000,7 +1000,7 @@ Qed.
 Lemma realizes_later_iff Γ p q i n :
   eval (interp Γ <$> p) = Finite i ->
   eval (interp Γ <$> q) = Finite (n + i) ->
-  realizes Γ ⊤ (n*▷p ⟹ q) /\ realizes Γ ⊤ (q ⟹ n*▷p).
+  realizes Γ ⊤ (n*▷p ⟹ q) ∧ realizes Γ ⊤ (q ⟹ n*▷p).
 Proof.
 intros Hp Hq; split; apply realizes_impl_intro_top;
 unfold realizes; erewrite fmap_later, eval_later, Hq; done.
@@ -1042,7 +1042,7 @@ Qed.
 
 Lemma case_form_reduce f  case :
   case.*1 ≡ₚ elements (FV f) ->
-  ∃ a, atom (FV f) (MD f) a /\
+  ∃ a, atom (FV f) (MD f) a ∧
   case_form (MD f) ⊥ case ⊢ f ⟺ a.
 Proof.
 intros; eapply d_reduce_to_atom.
